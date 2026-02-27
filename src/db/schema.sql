@@ -56,13 +56,16 @@ CREATE TABLE IF NOT EXISTS `customers` (
 -- ─── interactions (agent activity log) ────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS `interactions` (
-  `id`          INT           NOT NULL AUTO_INCREMENT,
-  `customer_id` VARCHAR(50)   NOT NULL,                  -- FK → customers.customer_id
-  `agent_id`    INT           DEFAULT NULL,              -- FK → users.id
-  `type`        VARCHAR(50)   NOT NULL DEFAULT 'System', -- 'Call' | 'Email' | 'Note' | 'System'
-  `outcome`     VARCHAR(255)  DEFAULT NULL,
-  `note`        TEXT          DEFAULT NULL,
-  `created_at`  TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `id`                     INT           NOT NULL AUTO_INCREMENT,
+  `customer_id`            VARCHAR(50)   NOT NULL,                  -- FK → customers.customer_id
+  `agent_id`               INT           DEFAULT NULL,              -- FK → users.id
+  `type`                   VARCHAR(50)   NOT NULL DEFAULT 'System', -- 'Call' | 'Email' | 'Note' | 'System'
+  `outcome`                VARCHAR(255)  DEFAULT NULL,
+  `note`                   TEXT          DEFAULT NULL,
+  `twilio_call_sid`        VARCHAR(64)   DEFAULT NULL,              -- Twilio CallSid (CA...)
+  `call_duration_seconds`  INT UNSIGNED  DEFAULT NULL,              -- call length in seconds
+  `recording_url`          VARCHAR(500)  DEFAULT NULL,              -- Twilio recording URL
+  `created_at`             TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
   PRIMARY KEY (`id`),
   CONSTRAINT `fk_interactions_customer`

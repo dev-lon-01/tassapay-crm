@@ -58,6 +58,7 @@ export function CallWidget() {
     callDuration,
     isMuted,
     deviceError,
+    deviceReady,
     acceptCall,
     rejectCall,
     hangUp,
@@ -67,14 +68,34 @@ export function CallWidget() {
 
   const [showKeypad, setShowKeypad] = useState(false);
 
-  // Only show when there is an active/connecting/incoming call or a mic error
   const hasMicError = deviceError === "MIC_BLOCKED";
-  const visible = callState !== "idle" || hasMicError;
-  if (!visible) return null;
+  const visible = callState !== "idle" || hasMicError || (!hasMicError && !deviceReady === false);
+  // Show the ready/starting pill whenever call is idle and no mic error
+  const showReadyPill = callState === "idle" && !hasMicError;
+
+  if (!visible && !showReadyPill) return null;
 
   return (
     // z-[70] clears mobile nav z-50
     <div className="fixed bottom-20 right-4 z-[70] w-72 md:bottom-6 md:right-6">
+
+      {/* ── Device ready/starting indicator (idle state, no error) ───────── */}
+      {showReadyPill && (
+        <div
+          className={`mb-2 flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium shadow-md w-fit ml-auto ${
+            deviceReady
+              ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
+              : "bg-amber-100 text-amber-700 border border-amber-200"
+          }`}
+        >
+          <span
+            className={`inline-block h-2 w-2 rounded-full ${
+              deviceReady ? "bg-emerald-500" : "bg-amber-400 animate-pulse"
+            }`}
+          />
+          {deviceReady ? "Ready" : "Starting…"}
+        </div>
+      )}
 
       {/* ── Mic blocked banner ───────────────────────────────────────────── */}
       {hasMicError && (

@@ -26,9 +26,29 @@ export async function GET(req: NextRequest) {
     const kycStatus      = searchParams.get("kycStatus");
     const transferStatus = searchParams.get("transferStatus");
     const search         = searchParams.get("search");
+    const phone          = searchParams.get("phone");
     const page           = Math.max(1, Number(searchParams.get("page") ?? 1));
     const limit          = Math.min(200, Math.max(1, Number(searchParams.get("limit") ?? 50)));
     const offset         = (page - 1) * limit;
+
+    // ── Phone lookup for screen pop (returns a single customer or 404) ──────
+    if (phone) {
+      const normalized = phone.replace(/\s/g, "");
+      const [rows] = await pool.execute<RowDataPacket[]>(
+        `SELECT customer_id, full_name, email, phone_number, country,
+                registration_date, kyc_completion_date, risk_status,
+                (SELECT COUNT(*) FROM transfers t WHERE t.customer_id = customers.customer_id) AS total_transfers
+         FROM   customers
+         WHERE  REPLACE(phone_number, ' ', '') = ?
+            OR  REPLACE(phone_number, ' ', '') = ?
+         LIMIT 1`,
+        [normalized, normalized.replace(/^\+/, "")]
+      );
+      if (!Array.isArray(rows) || rows.length === 0) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+      return NextResponse.json(rows[0]);
+    }
 
     const conditions: string[] = [];
     const params: (string | number)[] = [];

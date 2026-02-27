@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
   try {
     const body = await req.json();
-    const { customerId, agentId, type, outcome, note } = body ?? {};
+    const { customerId, agentId, type, outcome, note, twilio_call_sid, call_duration_seconds, recording_url } = body ?? {};
 
     if (!customerId || !type) {
       return NextResponse.json(
@@ -35,20 +35,24 @@ export async function POST(req: NextRequest) {
 
     // Insert
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO interactions (customer_id, agent_id, type, outcome, note)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO interactions (customer_id, agent_id, type, outcome, note, twilio_call_sid, call_duration_seconds, recording_url)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         String(customerId),
         agentId != null ? Number(agentId) : null,
         String(type),
         outcome != null ? String(outcome) : null,
         note    != null ? String(note)    : null,
+        twilio_call_sid        != null ? String(twilio_call_sid)        : null,
+        call_duration_seconds  != null ? Number(call_duration_seconds)  : null,
+        recording_url          != null ? String(recording_url)          : null,
       ]
     );
 
     // Return the full row so the client can optimistically append it
     const [rows] = await pool.execute<RowDataPacket[]>(
       `SELECT i.id, i.customer_id, i.agent_id, i.type, i.outcome, i.note,
+              i.twilio_call_sid, i.call_duration_seconds, i.recording_url,
               i.created_at, u.name AS agent_name
        FROM   interactions i
        LEFT JOIN users u ON u.id = i.agent_id

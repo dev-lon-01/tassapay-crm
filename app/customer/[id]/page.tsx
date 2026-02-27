@@ -529,7 +529,26 @@ export default function CustomerProfilePage({
           </div>
           <div className="flex items-center gap-2.5 text-sm text-slate-600">
             <Phone size={15} className="flex-shrink-0 text-slate-400" />
-            <span>{customer.phone_number ? normalizePhone(customer.phone_number, customer.country) : "—"}</span>
+            {customer.phone_number ? (
+              <button
+                type="button"
+                onClick={() => {
+                  const phone = normalizePhone(customer.phone_number!, customer.country);
+                  setSmsTo(phone);
+                  handleTabChange("Call");
+                  makeCall(phone, customer.full_name ?? undefined);
+                }}
+                title="Click to call"
+                className="group flex items-center gap-1 transition-colors hover:text-indigo-600"
+              >
+                <span className="group-hover:underline">
+                  {normalizePhone(customer.phone_number, customer.country)}
+                </span>
+                <Phone size={11} className="opacity-0 transition-opacity group-hover:opacity-100 text-indigo-500" />
+              </button>
+            ) : (
+              <span>—</span>
+            )}
           </div>
           <div className="flex items-center gap-2.5 text-sm text-slate-600">
             <MapPin size={15} className="flex-shrink-0 text-slate-400" />

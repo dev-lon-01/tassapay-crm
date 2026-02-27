@@ -26,10 +26,18 @@ export async function POST(req: NextRequest) {
 
   const twiml = new VoiceResponse();
   const toParam = params["To"] ?? "";
+  const statusCallbackUrl = `${baseUrl}/api/voice/status-callback`;
+  const dialOptions = {
+    record: "record-from-answer" as const,
+    recordingStatusCallback: statusCallbackUrl,
+    recordingStatusCallbackMethod: "POST" as const,
+    action: statusCallbackUrl,
+    method: "POST" as const,
+  };
 
   if (toParam.startsWith("+")) {
     // Outbound call — dial the customer's number
-    const dial = twiml.dial({ callerId: process.env.TWILIO_PHONE_NUMBER! });
+    const dial = twiml.dial({ ...dialOptions, callerId: process.env.TWILIO_PHONE_NUMBER! });
     dial.number({}, toParam);
   } else {
     // Inbound call — route to first available agent
@@ -37,7 +45,7 @@ export async function POST(req: NextRequest) {
       "SELECT id FROM users WHERE voice_available = 1 ORDER BY id ASC LIMIT 1"
     );
     if (rows.length > 0) {
-      const dial = twiml.dial();
+      const dial = twiml.dial(dialOptions);
       dial.client(`agent_${rows[0].id}`);
     } else {
       twiml.say("Thank you for calling TassaPay. All agents are currently unavailable. Please try again later.");

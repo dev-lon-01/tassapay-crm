@@ -8,12 +8,20 @@ import {
   useRef,
   useState,
 } from "react";
+import { useRouter } from "next/navigation";
 import type { Call, Device } from "@twilio/voice-sdk";
 import { apiFetch } from "@/src/lib/apiFetch";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type CallState = "idle" | "connecting" | "active" | "incoming";
+
+export interface EndedCall {
+  callSid: string | null;
+  durationSeconds: number;
+  callerInfo: string;
+  customerId: string | null;
+}
 
 interface TwilioVoiceContextValue {
   callState: CallState;
@@ -22,12 +30,14 @@ interface TwilioVoiceContextValue {
   isMuted: boolean;
   deviceError: string | null;
   deviceReady: boolean;
+  lastEndedCall: EndedCall | null;
   makeCall: (phoneNumber: string, displayName?: string) => void;
   acceptCall: () => void;
   rejectCall: () => void;
   hangUp: () => void;
   toggleMute: () => void;
   sendDigits: (digits: string) => void;
+  clearLastEndedCall: () => void;
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -37,58 +47,141 @@ const TwilioVoiceContext = createContext<TwilioVoiceContextValue | null>(null);
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function TwilioVoiceProvider({ children }: { children: React.ReactNode }) {
-  const deviceRef   = useRef<Device | null>(null);
-  const activeCallRef = useRef<Call | null>(null);
-  const timerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const router = useRouter();
 
-  const [callState, setCallState]     = useState<CallState>("idle");
-  const [callerInfo, setCallerInfo]   = useState<string | null>(null);
-  const [callDuration, setCallDuration] = useState(0);
-  const [isMuted, setIsMuted]         = useState(false);
-  const [deviceError, setDeviceError] = useState<string | null>(null);
-  const [deviceReady, setDeviceReady] = useState(false);
+  const deviceRef             = useRef<Device | null>(null);
+  const activeCallRef         = useRef<Call | null>(null);
+  const timerRef              = useRef<ReturnType<typeof setInterval> | null>(null);
+  const callDurationRef       = useRef(0);   // parallel ref to avoid stale closures
+  const callSidRef            = useRef<string | null>(null);
+  const callerInfoRef         = useRef<string | null>(null);
+  const incomingCustomerIdRef = useRef<string | null>(null);
+  const ringAudioRef          = useRef<HTMLAudioElement | null>(null);
+
+  const [callState, setCallState]         = useState<CallState>("idle");
+  const [callerInfo, setCallerInfo]       = useState<string | null>(null);
+  const [callDuration, setCallDuration]   = useState(0);
+  const [isMuted, setIsMuted]             = useState(false);
+  const [deviceError, setDeviceError]     = useState<string | null>(null);
+  const [deviceReady, setDeviceReady]     = useState(false);
+  const [lastEndedCall, setLastEndedCall] = useState<EndedCall | null>(null);
+
+  // ─── Helper: keep callerInfo in sync between ref and state ─────────────────
+  function updateCallerInfo(info: string | null) {
+    callerInfoRef.current = info;
+    setCallerInfo(info);
+  }
+
+  // ─── Ring audio helpers ─────────────────────────────────────────────────────
+  function startRing() {
+    if (typeof window === "undefined") return;
+    if (!ringAudioRef.current) {
+      ringAudioRef.current = new Audio("/ring.mp3");
+      ringAudioRef.current.loop = true;
+    }
+    ringAudioRef.current.currentTime = 0;
+    ringAudioRef.current.play().catch(() => {});
+  }
+  function stopRing() {
+    if (ringAudioRef.current) {
+      ringAudioRef.current.pause();
+      ringAudioRef.current.currentTime = 0;
+    }
+  }
 
   // ─── Timer helpers ──────────────────────────────────────────────────────────
   function startTimer() {
+    callDurationRef.current = 0;
     setCallDuration(0);
-    timerRef.current = setInterval(() => setCallDuration((s) => s + 1), 1000);
+    timerRef.current = setInterval(() => {
+      callDurationRef.current += 1;
+      setCallDuration((s) => s + 1);
+    }, 1000);
   }
   function stopTimer() {
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
-    setCallDuration(0);
+  }
+
+  // ─── Screen pop: look up customer by phone number ──────────────────────────
+  async function screenPop(fromNumber: string): Promise<string | null> {
+    try {
+      const encoded = encodeURIComponent(fromNumber);
+      const res = await apiFetch(`/api/customers?phone=${encoded}`);
+      if (!res.ok) return null;
+      const data = await res.json() as { customer_id?: string };
+      return data.customer_id ?? null;
+    } catch {
+      return null;
+    }
   }
 
   // ─── Attach listeners to a Call object ─────────────────────────────────────
   function attachCallListeners(call: Call) {
     activeCallRef.current = call;
 
-    call.on("accept", () => {
+    call.on("accept", (acceptedCall: Call) => {
+      stopRing();
+      // Capture CallSid from the accepted call parameters
+      const sid =
+        (acceptedCall as unknown as { parameters?: Record<string, string> })
+          .parameters?.CallSid ?? null;
+      callSidRef.current = sid;
       setCallState("active");
       setIsMuted(false);
       startTimer();
     });
+
     call.on("disconnect", () => {
-      setCallState("idle");
-      setCallerInfo(null);
-      setIsMuted(false);
-      activeCallRef.current = null;
+      stopRing();
+      // Snapshot before zeroing — callDurationRef stays accurate in the closure
+      const durationSnap = callDurationRef.current;
+      const callerSnap   = callerInfoRef.current ?? "Unknown";
+      const sidSnap      = callSidRef.current;
+      const cidSnap      = incomingCustomerIdRef.current;
+
       stopTimer();
+      callDurationRef.current = 0;
+      callSidRef.current = null;
+      incomingCustomerIdRef.current = null;
+      activeCallRef.current = null;
+
+      setCallState("idle");
+      updateCallerInfo(null);
+      setIsMuted(false);
+      setCallDuration(0);
+
+      // Surface the ended call so PostCallModal can log it
+      setLastEndedCall({
+        callSid: sidSnap,
+        durationSeconds: durationSnap,
+        callerInfo: callerSnap,
+        customerId: cidSnap,
+      });
+
       // Mark agent available again
       apiFetch("/api/voice/available", {
         method: "PATCH",
         body: JSON.stringify({ available: true }),
       }).catch(() => {});
     });
+
     call.on("cancel", () => {
-      setCallState("idle");
-      setCallerInfo(null);
-      activeCallRef.current = null;
+      stopRing();
       stopTimer();
+      callDurationRef.current = 0;
+      callSidRef.current = null;
+      incomingCustomerIdRef.current = null;
+      activeCallRef.current = null;
+      setCallState("idle");
+      updateCallerInfo(null);
+      setCallDuration(0);
     });
+
     call.on("error", (err: Error) => {
+      stopRing();
       setDeviceError(err.message);
     });
   }
@@ -144,10 +237,26 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
         }
       });
 
-      device.on("incoming", (call: Call) => {
+      device.on("incoming", async (call: Call) => {
+        const from = call.parameters?.From ?? "";
         setCallState("incoming");
-        setCallerInfo(call.parameters?.From ?? "Unknown");
+        updateCallerInfo(from || "Unknown Caller");
+        startRing();
         attachCallListeners(call);
+
+        // Screen pop: navigate to customer profile if the number matches
+        if (from && !destroyed) {
+          const customerId = await screenPop(from);
+          if (!destroyed) {
+            if (customerId) {
+              incomingCustomerIdRef.current = customerId;
+              router.push(`/customer/${customerId}`);
+            } else {
+              incomingCustomerIdRef.current = null;
+              updateCallerInfo("Unknown Caller");
+            }
+          }
+        }
       });
 
       device.on("tokenWillExpire", async () => {
@@ -163,6 +272,7 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
     return () => {
       destroyed = true;
       stopTimer();
+      stopRing();
       if (deviceRef.current) {
         // Mark unavailable before destroying
         apiFetch("/api/voice/available", {
@@ -181,7 +291,7 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
   const makeCall = useCallback((phoneNumber: string, displayName?: string) => {
     if (!deviceRef.current || callState !== "idle") return;
     setCallState("connecting");
-    setCallerInfo(displayName ?? phoneNumber);
+    updateCallerInfo(displayName ?? phoneNumber);
 
     deviceRef.current
       .connect({ params: { To: phoneNumber } })
@@ -190,7 +300,7 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
       })
       .catch((err: Error) => {
         setCallState("idle");
-        setCallerInfo(null);
+        updateCallerInfo(null);
         setDeviceError(err.message);
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -204,11 +314,14 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
 
   const rejectCall = useCallback(() => {
     if (activeCallRef.current && callState === "incoming") {
+      stopRing();
       activeCallRef.current.reject();
       setCallState("idle");
-      setCallerInfo(null);
+      updateCallerInfo(null);
+      incomingCustomerIdRef.current = null;
       activeCallRef.current = null;
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [callState]);
 
   const hangUp = useCallback(() => {
@@ -230,6 +343,10 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
     }
   }, [callState]);
 
+  const clearLastEndedCall = useCallback(() => {
+    setLastEndedCall(null);
+  }, []);
+
   return (
     <TwilioVoiceContext.Provider
       value={{
@@ -239,12 +356,14 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
         isMuted,
         deviceError,
         deviceReady,
+        lastEndedCall,
         makeCall,
         acceptCall,
         rejectCall,
         hangUp,
         toggleMute,
         sendDigits,
+        clearLastEndedCall,
       }}
     >
       {children}

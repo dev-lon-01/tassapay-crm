@@ -6,6 +6,7 @@ import { AppHeader } from "@/src/components/AppHeader";
 import { AppNavigation } from "@/src/components/AppNavigation";
 import { ProtectedRoute } from "@/src/components/ProtectedRoute";
 import { CallWidget } from "@/src/components/CallWidget";
+import { PostCallModal } from "@/src/components/PostCallModal";
 
 interface AppShellProps {
   children: ReactNode;
@@ -34,6 +35,7 @@ export function AppShell({ children }: AppShellProps) {
           <div className="mx-auto w-full max-w-6xl">{children}</div>
         </main>
         <CallWidget />
+        <PostCallModal />
       </div>
     </ProtectedRoute>
   );
