@@ -28,7 +28,8 @@ export async function POST(req: NextRequest) {
   const signature = req.headers.get("x-twilio-signature") ?? "";
   const url       = `${baseUrl}/api/voice/status-callback`;
 
-  const isValid = twilio.validateRequest(authToken, signature, url, params);
+  const isDev = process.env.NODE_ENV === "development";
+  const isValid = isDev || twilio.validateRequest(authToken, signature, url, params);
   if (!isValid) {
     return new NextResponse("Forbidden", { status: 403 });
   }

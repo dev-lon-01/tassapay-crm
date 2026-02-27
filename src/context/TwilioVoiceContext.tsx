@@ -11,6 +11,7 @@ import {
 import { useRouter } from "next/navigation";
 import type { Call, Device } from "@twilio/voice-sdk";
 import { apiFetch } from "@/src/lib/apiFetch";
+import { useAuth } from "@/src/context/AuthContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -48,6 +49,7 @@ const TwilioVoiceContext = createContext<TwilioVoiceContextValue | null>(null);
 
 export function TwilioVoiceProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const { token: authToken } = useAuth();
 
   const deviceRef             = useRef<Device | null>(null);
   const activeCallRef         = useRef<Call | null>(null);
@@ -200,6 +202,9 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
 
   // ─── Device init ───────────────────────────────────────────────────────────
   useEffect(() => {
+    // Don't initialize until the user is authenticated
+    if (!authToken) return;
+
     let destroyed = false;
 
     async function init() {
@@ -284,7 +289,7 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [authToken]);
 
   // ─── Public API ─────────────────────────────────────────────────────────────
 

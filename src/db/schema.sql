@@ -15,8 +15,9 @@ CREATE TABLE IF NOT EXISTS `users` (
   `role`          VARCHAR(50)   NOT NULL DEFAULT 'Agent',   -- 'Agent' | 'Admin'
   `email`         VARCHAR(255)  DEFAULT NULL,
   `password_hash` VARCHAR(255)  DEFAULT NULL,
-  `is_active`     TINYINT(1)    NOT NULL DEFAULT 1,
-  `created_at`    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `is_active`          TINYINT(1)    NOT NULL DEFAULT 1,
+  `voice_available`    TINYINT(1)    NOT NULL DEFAULT 0,
+  `created_at`         DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_users_email` (`email`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
