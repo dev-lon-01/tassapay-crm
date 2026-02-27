@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { AppHeader } from "@/src/components/AppHeader";
 import { AppNavigation } from "@/src/components/AppNavigation";
 import { ProtectedRoute } from "@/src/components/ProtectedRoute";
+import { CallWidget } from "@/src/components/CallWidget";
 
 interface AppShellProps {
   children: ReactNode;
@@ -32,6 +33,7 @@ export function AppShell({ children }: AppShellProps) {
         <main className="px-4 pb-24 pt-5 md:ml-64 md:px-8 md:pb-10 md:pt-7">
           <div className="mx-auto w-full max-w-6xl">{children}</div>
         </main>
+        <CallWidget />
       </div>
     </ProtectedRoute>
   );

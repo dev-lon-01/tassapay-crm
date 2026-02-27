@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   Mail,
   Phone,
+  PhoneOff,
   MapPin,
   Calendar,
   AtSign,
@@ -23,10 +24,13 @@ import {
   XCircle,
   ArrowRight,
   Zap,
+  Mic,
+  MicOff,
 } from "lucide-react";
 import { normalizePhone } from "@/src/lib/phoneUtils";
 import { apiFetch } from "@/src/lib/apiFetch";
 import { useQueue, type TaskStatus } from "@/src/context/QueueContext";
+import { useTwilioVoice } from "@/src/context/TwilioVoiceContext";
 
 interface ApiCustomer {
   customer_id: string;
@@ -103,6 +107,7 @@ const FOCUS_OUTCOMES = [
   "Select outcome…",
   "No Answer",
   "Left Voicemail",
+  "Left SMS",
   "Promised to Upload ID",
   "Guided Through App",
   "Requested Call Back",
@@ -121,6 +126,7 @@ const NOTE_OUTCOMES = [
   "General Note",
   "Spoke with Customer",
   "Left Voicemail",
+  "Left SMS",
   "ID Verified",
   "Escalated to Compliance",
   "Follow-up Scheduled",
@@ -130,9 +136,10 @@ const LOGGER_TABS = [
   { key: "SMS" as const, label: "Send SMS", icon: MessageSquare },
   { key: "Email" as const, label: "Send Email", icon: AtSign },
   { key: "Note" as const, label: "Log Note", icon: FileText },
+  { key: "Call" as const, label: "Call", icon: Phone },
 ] as const;
 
-type LoggerTab = "SMS" | "Email" | "Note";
+type LoggerTab = "SMS" | "Email" | "Note" | "Call";
 
 function timelineIcon(type: ApiInteraction["type"]) {
   switch (type) {
@@ -161,6 +168,7 @@ export default function CustomerProfilePage({
 }) {
   const router = useRouter();
   const { queuePosition, sortedQueue, activeTab: queueTab, setTaskStatus } = useQueue();
+  const { makeCall, callState, callerInfo, callDuration, isMuted, toggleMute, hangUp } = useTwilioVoice();
   const focusPosition = queuePosition(params.id);
   const [customer, setCustomer] = useState<ApiCustomer | null>(null);
   const [timeline, setTimeline] = useState<ApiInteraction[]>([]);
@@ -401,6 +409,8 @@ export default function CustomerProfilePage({
       setFocusSending(false);
     }
   }
+
+  const isCallActive = callState !== "idle" && callerInfo === (customer?.full_name ?? smsTo);
 
   const isSendDisabled =
     sending ||
@@ -849,10 +859,73 @@ export default function CustomerProfilePage({
           </div>
         )}
 
+        {activeTab === "Call" && (
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">
+                Phone number
+              </label>
+              <input
+                type="tel"
+                value={smsTo}
+                onChange={(e) => setSmsTo(e.target.value)}
+                placeholder="+447xxxxxxxxx"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              />
+            </div>
+            {callState !== "idle" ? (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="relative flex h-2.5 w-2.5">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                    </span>
+                    <span className="text-sm font-semibold text-emerald-800">
+                      {callState === "connecting"
+                        ? "Connecting…"
+                        : callState === "active"
+                          ? `${String(Math.floor(callDuration / 60)).padStart(2, "0")}:${String(callDuration % 60).padStart(2, "0")}`
+                          : "Incoming"}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={toggleMute}
+                      className={`flex h-9 w-9 items-center justify-center rounded-full transition ${
+                        isMuted ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      }`}
+                    >
+                      {isMuted ? <MicOff size={16} /> : <Mic size={16} />}
+                    </button>
+                    <button
+                      onClick={hangUp}
+                      className="flex h-9 w-9 items-center justify-center rounded-full bg-red-500 text-white hover:bg-red-600"
+                    >
+                      <PhoneOff size={16} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => makeCall(smsTo.trim(), customer?.full_name ?? undefined)}
+                disabled={!smsTo.trim() || callState !== "idle"}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold text-white transition-all hover:bg-emerald-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Phone size={15} />
+                Start Call
+              </button>
+            )}
+          </div>
+        )}
+
         <button
           onClick={handleSend}
-          disabled={isSendDisabled}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white transition-all hover:bg-indigo-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+          disabled={isSendDisabled || activeTab === "Call"}
+          className={`mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white transition-all hover:bg-indigo-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 ${
+            activeTab === "Call" ? "hidden" : ""
+          }`}
         >
           {sending ? (
             <>

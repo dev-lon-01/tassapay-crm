@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@sendgrid/mail": "^8.1.6",
+    "@twilio/voice-sdk": "^2.18.0",
     "axios": "^1.13.5",
     "bcryptjs": "^3.0.3",
     "form-data": "^4.0.5",

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/src/context/AuthContext";
 import { QueueProvider } from "@/src/context/QueueContext";
+import { TwilioVoiceProvider } from "@/src/context/TwilioVoiceContext";
 import { AppShell } from "@/src/components/AppShell";
 
 export const metadata: Metadata = {
@@ -19,7 +20,9 @@ export default function RootLayout({
       <body className="antialiased">
         <AuthProvider>
           <QueueProvider>
-            <AppShell>{children}</AppShell>
+            <TwilioVoiceProvider>
+              <AppShell>{children}</AppShell>
+            </TwilioVoiceProvider>
           </QueueProvider>
         </AuthProvider>
       </body>
