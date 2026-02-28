@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import twilio from "twilio";
 import { pool } from "@/src/lib/db";
+
+const { VoiceResponse } = twilio.twiml;
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
 
 /**
@@ -88,6 +90,27 @@ export async function POST(req: NextRequest) {
         console.error("[status-callback] missed call insert failed", err);
       });
     }
+
+    // Offer voicemail — Twilio will POST RecordingUrl back here when ready
+    const baseUrl = process.env.APP_BASE_URL!;
+    const voicemailTwiml = new VoiceResponse();
+    voicemailTwiml.say(
+      { voice: "alice" },
+      "Sorry we missed your call. Please leave a message after the tone and press hash when done."
+    );
+    voicemailTwiml.record({
+      maxLength: 120,
+      finishOnKey: "#",
+      recordingStatusCallback: `${baseUrl}/api/voice/status-callback`,
+      recordingStatusCallbackMethod: "POST",
+      transcribe: false,
+    });
+    voicemailTwiml.say({ voice: "alice" }, "We did not receive a recording. Goodbye.");
+    voicemailTwiml.hangup();
+    return new NextResponse(voicemailTwiml.toString(), {
+      status: 200,
+      headers: { "Content-Type": "text/xml" },
+    });
   }
 
   return new NextResponse(null, { status: 204 });

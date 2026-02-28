@@ -49,7 +49,18 @@ export async function POST(req: NextRequest) {
       const dial = twiml.dial(dialOptions);
       dial.client(`agent_${rows[0].id}`);
     } else {
-      twiml.say("Thank you for calling TassaPay. All agents are currently unavailable. Please try again later.");
+      twiml.say(
+        { voice: "alice" },
+        "Thank you for calling TassaPay. All agents are currently unavailable. Please leave a message after the tone and we will get back to you."
+      );
+      twiml.record({
+        maxLength: 120,
+        finishOnKey: "#",
+        recordingStatusCallback: statusCallbackUrl,
+        recordingStatusCallbackMethod: "POST",
+        transcribe: false,
+      });
+      twiml.say({ voice: "alice" }, "We did not receive a recording. Goodbye.");
       twiml.hangup();
     }
   }
