@@ -51,17 +51,17 @@ export async function POST(req: NextRequest) {
     return new NextResponse(null, { status: 204 });
   }
 
-  // ── Case 2: Missed inbound call ─────────────────────────────────────────────
+  // ── Case 2 & 3: Inbound call completed (missed or answered) ─────────────────
   const dialStatus  = params["DialCallStatus"] ?? params["CallStatus"] ?? "";
   const direction   = params["Direction"]      ?? "";
   const fromNumber  = params["From"]           ?? params["Called"]    ?? "";
 
-  const isMissed =
-    direction === "inbound" &&
+  const isMissed   = direction === "inbound" &&
     (dialStatus === "no-answer" || dialStatus === "busy" || dialStatus === "failed");
+  const isAnswered = direction === "inbound" && dialStatus === "completed";
 
-  if (isMissed && fromNumber) {
-    // Try to look up customer by phone number
+  if ((isMissed || isAnswered) && fromNumber) {
+    // Look up customer by phone number (shared by both branches)
     let customerId: string | null = null;
     const normalized = fromNumber.replace(/\s/g, "");
     const [rows] = await pool.execute<RowDataPacket[]>(
@@ -76,6 +76,26 @@ export async function POST(req: NextRequest) {
       customerId = (rows as RowDataPacket[])[0].customer_id as string;
     }
 
+    if (isAnswered) {
+      // Answered call — log interaction now; RecordingUrl UPDATE will follow separately
+      if (customerId) {
+        await pool.execute<ResultSetHeader>(
+          `INSERT INTO interactions
+             (customer_id, agent_id, type, outcome, note, twilio_call_sid)
+           VALUES (?, NULL, 'Call', 'Inbound Call', ?, ?)`,
+          [
+            customerId,
+            `Inbound from ${fromNumber} — answered`,
+            callSid || null,
+          ]
+        ).catch((err: unknown) => {
+          console.error("[status-callback] answered call insert failed", err);
+        });
+      }
+      return new NextResponse(null, { status: 204 });
+    }
+
+    // Missed call — log interaction and offer voicemail
     if (customerId) {
       await pool.execute<ResultSetHeader>(
         `INSERT INTO interactions
@@ -92,7 +112,6 @@ export async function POST(req: NextRequest) {
     }
 
     // Offer voicemail — Twilio will POST RecordingUrl back here when ready
-    const baseUrl = process.env.APP_BASE_URL!;
     const voicemailTwiml = new VoiceResponse();
     voicemailTwiml.say(
       { voice: "alice" },

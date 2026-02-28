@@ -42,12 +42,19 @@ export async function POST(req: NextRequest) {
     dial.number({}, toParam);
   } else {
     // Inbound call — route to first available agent
+    const sipDomain = process.env.TWILIO_SIP_DOMAIN?.trim() ?? "";
     const [rows] = await pool.execute<RowDataPacket[]>(
       "SELECT id FROM users WHERE voice_available = 1 ORDER BY id ASC LIMIT 1"
     );
     if (rows.length > 0) {
+      const agentId = rows[0].id as number;
       const dial = twiml.dial(dialOptions);
-      dial.client(`agent_${rows[0].id}`);
+      // Always ring the browser client
+      dial.client(`agent_${agentId}`);
+      // Also ring the SIP softphone simultaneously when a domain is configured
+      if (sipDomain) {
+        dial.sip({}, `sip:agent_${agentId}@${sipDomain}`);
+      }
     } else {
       twiml.say(
         { voice: "alice" },
