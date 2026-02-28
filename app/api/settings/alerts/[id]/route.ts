@@ -28,12 +28,18 @@ export async function PUT(
       source_currency,
       alert_emails,
       alert_phones,
+      pushover_sound,
+      pushover_priority,
+      pushover_enabled,
       destination_country,
       is_active,
     } = body as {
       source_currency?: string;
       alert_emails?: string | null;
       alert_phones?: string | null;
+      pushover_sound?: string;
+      pushover_priority?: number;
+      pushover_enabled?: boolean;
       destination_country?: string;
       is_active?: boolean;
     };
@@ -61,6 +67,18 @@ export async function PUT(
     if (is_active !== undefined) {
       sets.push("is_active = ?");
       values.push(is_active ? 1 : 0);
+    }
+    if (pushover_sound !== undefined) {
+      sets.push("pushover_sound = ?");
+      values.push(pushover_sound);
+    }
+    if (pushover_priority !== undefined) {
+      sets.push("pushover_priority = ?");
+      values.push(pushover_priority);
+    }
+    if (pushover_enabled !== undefined) {
+      sets.push("pushover_enabled = ?");
+      values.push(pushover_enabled ? 1 : 0);
     }
 
     if (!sets.length) {

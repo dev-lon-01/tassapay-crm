@@ -44,12 +44,18 @@ export async function POST(req: NextRequest) {
       source_currency,
       alert_emails = null,
       alert_phones = null,
+      pushover_sound = "pushover",
+      pushover_priority = 0,
+      pushover_enabled = true,
       destination_country = "Somalia",
       is_active = true,
     } = body as {
       source_currency: string;
       alert_emails?: string | null;
       alert_phones?: string | null;
+      pushover_sound?: string;
+      pushover_priority?: number;
+      pushover_enabled?: boolean;
       destination_country?: string;
       is_active?: boolean;
     };
@@ -61,22 +67,26 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!alert_emails?.trim() && !alert_phones?.trim()) {
+    if (!alert_emails?.trim() && !alert_phones?.trim() && !pushover_enabled) {
       return NextResponse.json(
-        { error: "At least one of alert_emails or alert_phones is required" },
+        { error: "At least one of Email, Phone, or Push Notification must be enabled" },
         { status: 400 }
       );
     }
 
     const [result] = await pool.execute<ResultSetHeader>(
       `INSERT INTO alert_routings
-         (destination_country, source_currency, alert_emails, alert_phones, is_active)
-       VALUES (?, ?, ?, ?, ?)`,
+         (destination_country, source_currency, alert_emails, alert_phones,
+          pushover_sound, pushover_priority, pushover_enabled, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         destination_country.trim(),
         source_currency.trim().toUpperCase(),
         alert_emails?.trim() || null,
         alert_phones?.trim() || null,
+        pushover_sound,
+        pushover_priority,
+        pushover_enabled ? 1 : 0,
         is_active ? 1 : 0,
       ]
     );

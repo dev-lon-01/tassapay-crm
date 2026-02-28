@@ -17,6 +17,7 @@
 import twilio from "twilio";
 import sgMail from "@sendgrid/mail";
 import { pool } from "@/src/lib/db";
+import { sendPushoverAlert } from "@/src/lib/pushover";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
 
 // ─── types ────────────────────────────────────────────────────────────────────
@@ -33,6 +34,9 @@ interface AlertRouting extends RowDataPacket {
   id: number;
   alert_emails: string | null;
   alert_phones: string | null;
+  pushover_sound: string;
+  pushover_priority: number;
+  pushover_enabled: number;
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -81,7 +85,7 @@ export async function checkAndFireSlaAlerts(): Promise<void> {
 
     // ── 2. Find the active routing rule for this currency ──────────────────
     const [routingRows] = await pool.execute<AlertRouting[]>(
-      `SELECT id, alert_emails, alert_phones
+      `SELECT id, alert_emails, alert_phones, pushover_sound, pushover_priority, pushover_enabled
        FROM   alert_routings
        WHERE  destination_country = 'Somalia'
          AND  source_currency = ?
@@ -139,6 +143,26 @@ export async function checkAndFireSlaAlerts(): Promise<void> {
       );
     }
 
+    // ── 3c. Pushover ───────────────────────────────────────────────────────
+    const pushoverUserKey = process.env.PUSHOVER_USER_KEY;
+    if (pushoverUserKey && routing.pushover_enabled) {
+      const pushoverMsg = `🚨 SLA Breach: Transfer ${transfer.transaction_ref} is delayed. Amount: ${transfer.send_amount ?? "?"} ${transfer.send_currency ?? ""}.`;
+      dispatchPromises.push(
+        sendPushoverAlert(
+          [pushoverUserKey],
+          pushoverMsg,
+          "TassaPay SLA Breach",
+          routing.pushover_priority ?? 0,
+          routing.pushover_sound ?? "pushover"
+        ).catch((err: Error) =>
+          console.error(
+            `[SLA] Pushover for ${transfer.transaction_ref} failed:`,
+            err.message
+          )
+        )
+      );
+    }
+
     // Fire all dispatches concurrently, then stamp the spam lock
     await Promise.all(dispatchPromises);
 
@@ -150,7 +174,7 @@ export async function checkAndFireSlaAlerts(): Promise<void> {
 
     console.log(
       `[SLA] Alert fired for ${transfer.transaction_ref} ` +
-      `(${transfer.send_currency}) → ${phones.length} SMS, ${emails.length} email(s)`
+      `(${transfer.send_currency}) → ${phones.length} SMS, ${emails.length} email(s), ${process.env.PUSHOVER_USER_KEY ? 1 : 0} push`
     );
   }
 }

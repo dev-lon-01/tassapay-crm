@@ -6,13 +6,13 @@ import {
   Plus,
   Pencil,
   Trash2,
-  X,
   MessageSquare,
   AtSign,
   Loader2,
   Save,
 } from "lucide-react";
 import { apiFetch } from "@/src/lib/apiFetch";
+import { Modal } from "@/src/components/Modal";
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
@@ -81,123 +81,113 @@ function TemplateModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 backdrop-blur-sm sm:items-center">
-      <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
-        {/* Modal header */}
-        <div className="mb-5 flex items-center justify-between">
-          <h3 className="text-base font-semibold text-slate-900">
-            {isEditing ? "Edit Template" : "New Template"}
-          </h3>
+    <Modal
+      title={isEditing ? "Edit Template" : "New Template"}
+      onClose={onClose}
+      footer={
+        <div className="flex gap-2">
           <button
+            type="button"
             onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+            className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
           >
-            <X size={18} />
+            Cancel
+          </button>
+          <button
+            type="submit"
+            form="template-modal-form"
+            disabled={saving || !name.trim() || !body.trim()}
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-40"
+          >
+            {saving ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Save size={14} />
+            )}
+            {saving ? "Saving…" : "Save Template"}
           </button>
         </div>
+      }
+    >
+      <form id="template-modal-form" onSubmit={handleSubmit} className="space-y-4">
+        {/* Name */}
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">
+            Template Name
+          </label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder='e.g. "KYC Reminder 1"'
+            required
+            className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-400"
+          />
+        </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Name */}
+        {/* Channel */}
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">
+            Channel
+          </label>
+          <select
+            value={channel}
+            onChange={(e) => setChannel(e.target.value as "SMS" | "Email")}
+            className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-400"
+          >
+            <option value="SMS">SMS</option>
+            <option value="Email">Email</option>
+          </select>
+        </div>
+
+        {/* Subject (email only) */}
+        {channel === "Email" && (
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-600">
-              Template Name
+              Subject
             </label>
             <input
               type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder='e.g. "KYC Reminder 1"'
-              required
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              placeholder="Email subject line…"
               className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-400"
             />
           </div>
+        )}
 
-          {/* Channel */}
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600">
-              Channel
-            </label>
-            <select
-              value={channel}
-              onChange={(e) => setChannel(e.target.value as "SMS" | "Email")}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-400"
-            >
-              <option value="SMS">SMS</option>
-              <option value="Email">Email</option>
-            </select>
-          </div>
+        {/* Body */}
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">
+            Body
+          </label>
+          <textarea
+            rows={6}
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            required
+            placeholder="Message body…"
+            className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-400"
+          />
+          <p className="mt-1.5 text-xs text-slate-400">
+            Available variables:{" "}
+            <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-slate-600">
+              {"{{fullName}}"}
+            </code>
+            ,{" "}
+            <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-slate-600">
+              {"{{country}}"}
+            </code>
+          </p>
+        </div>
 
-          {/* Subject (email only) */}
-          {channel === "Email" && (
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600">
-                Subject
-              </label>
-              <input
-                type="text"
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                placeholder="Email subject line…"
-                className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-400"
-              />
-            </div>
-          )}
-
-          {/* Body */}
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600">
-              Body
-            </label>
-            <textarea
-              rows={6}
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              required
-              placeholder="Message body…"
-              className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-400"
-            />
-            <p className="mt-1.5 text-xs text-slate-400">
-              Available variables:{" "}
-              <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-slate-600">
-                {"{{fullName}}"}
-              </code>
-              ,{" "}
-              <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-slate-600">
-                {"{{country}}"}
-              </code>
-            </p>
-          </div>
-
-          {error && (
-            <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
-              {error}
-            </p>
-          )}
-
-          <div className="flex gap-2 pt-1">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving || !name.trim() || !body.trim()}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-40"
-            >
-              {saving ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <Save size={14} />
-              )}
-              {saving ? "Saving…" : "Save Template"}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        {error && (
+          <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+            {error}
+          </p>
+        )}
+      </form>
+    </Modal>
   );
 }
 

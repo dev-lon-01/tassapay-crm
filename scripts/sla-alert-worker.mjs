@@ -13,6 +13,7 @@
 
 import { createRequire } from "module";
 import { readFileSync } from "fs";
+import https from "https";
 const require = createRequire(import.meta.url);
 
 // ── Load .env.local ───────────────────────────────────────────────────────────
@@ -80,11 +81,14 @@ async function checkAndFireSlaAlerts() {
   );
   sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
+  // Collect transfers per pushover routing key for a single summary push at end
+  const pushoverSummaries = new Map(); // routingKey → { routing, transfers[] }
+
   for (const transfer of lateTransfers) {
     if (!transfer.send_currency) continue;
 
     const [routingRows] = await pool.execute(
-      `SELECT alert_emails, alert_phones
+      `SELECT alert_emails, alert_phones, pushover_sound, pushover_priority
        FROM   alert_routings
        WHERE  destination_country = 'Somalia'
          AND  source_currency = ?
@@ -140,6 +144,49 @@ async function checkAndFireSlaAlerts() {
     console.log(
       `[SLA] ✓ Alert fired: ${transfer.transaction_ref} (${transfer.send_currency}) → ${phones.length} SMS, ${emails.length} email(s)`
     );
+
+    // Collect for single summary Pushover at end of run
+    if (process.env.PUSHOVER_USER_KEY) {
+      const routingKey = `${routing.pushover_sound}:${routing.pushover_priority}`;
+      if (!pushoverSummaries.has(routingKey)) {
+        pushoverSummaries.set(routingKey, { routing, transfers: [] });
+      }
+      pushoverSummaries.get(routingKey).transfers.push(transfer);
+    }
+  }
+
+  // ── Send one Pushover summary per unique routing ──────────────────────────
+  for (const { routing, transfers } of pushoverSummaries.values()) {
+    const pushoverKeys = [process.env.PUSHOVER_USER_KEY].filter(Boolean);
+    const count    = transfers.length;
+    const priority = routing.pushover_priority ?? 0;
+    const summaryMsg = count === 1
+      ? `🚨 SLA Breach: Transfer ${transfers[0].transaction_ref} is delayed. Amount: ${transfers[0].send_amount ?? "?"} ${transfers[0].send_currency ?? ""}.`
+      : `🚨 SLA Breach: ${count} transfers are overdue.\nLatest: ${transfers[0].transaction_ref} (+${count - 1} more).\nPlease check QA Dashboard.`;
+
+    for (const user of pushoverKeys) {
+      const pushBody = {
+        token:    process.env.PUSHOVER_APP_TOKEN,
+        user,
+        message:  summaryMsg,
+        title:    "TassaPay SLA Breach",
+        priority,
+        sound:    routing.pushover_sound ?? "pushover",
+        ...(priority === 2 ? { retry: 60, expire: 3600 } : {}),
+      };
+      await new Promise((resolve) => {
+        const payload = JSON.stringify(pushBody);
+        const req = https.request(
+          { hostname: "api.pushover.net", path: "/1/messages.json", method: "POST",
+            headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) } },
+          (res) => { res.resume(); res.on("end", resolve); }
+        );
+        req.on("error", (err) => { console.error(`[SLA] Pushover to ${user} failed:`, err.message); resolve(); });
+        req.write(payload); req.end();
+      });
+    }
+
+    console.log(`[SLA] ✓ Pushover summary sent: ${count} transfer(s) → ${pushoverKeys.length} push`);
   }
 }
 

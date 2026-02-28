@@ -271,6 +271,9 @@ CREATE TABLE IF NOT EXISTS `alert_routings` (
   `source_currency`      VARCHAR(10)   NOT NULL,               -- 'GBP' | 'EUR' | 'USD' etc.
   `alert_emails`         TEXT          DEFAULT NULL,           -- comma-separated emails
   `alert_phones`         TEXT          DEFAULT NULL,           -- comma-separated E.164 phone numbers
+  `pushover_sound`       VARCHAR(50)   NOT NULL DEFAULT 'pushover',
+  `pushover_priority`    INT           NOT NULL DEFAULT 0,
+  `pushover_enabled`     TINYINT(1)    NOT NULL DEFAULT 1,
   `is_active`            TINYINT(1)    NOT NULL DEFAULT 1,
   `created_at`           DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`           DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
