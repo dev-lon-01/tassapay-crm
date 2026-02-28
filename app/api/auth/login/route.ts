@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     }
 
     const [rows] = await pool.execute<RowDataPacket[]>(
-      "SELECT id, name, role, email, password_hash, is_active FROM users WHERE email = ? LIMIT 1",
+      "SELECT id, name, role, email, password_hash, is_active, allowed_regions, can_view_dashboard FROM users WHERE email = ? LIMIT 1",
       [email.trim().toLowerCase()]
     );
 
@@ -62,12 +62,33 @@ export async function POST(req: NextRequest) {
     const secret = process.env.JWT_SECRET;
     if (!secret) throw new Error("JWT_SECRET is not set");
 
-    const payload = { id: user.id, email: user.email, name: user.name, role: user.role };
+    // allowed_regions may be stored as a JSON string in MySQL
+    const allowedRegions: string[] =
+      typeof user.allowed_regions === "string"
+        ? JSON.parse(user.allowed_regions)
+        : (user.allowed_regions ?? ["UK", "EU"]);
+    const canViewDashboard = Boolean(user.can_view_dashboard);
+
+    const payload = {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      allowed_regions: allowedRegions,
+      can_view_dashboard: canViewDashboard,
+    };
     const token = jwt.sign(payload, secret, { expiresIn: "1d" });
 
     return NextResponse.json({
       token,
-      user: { id: user.id, name: user.name, role: user.role, email: user.email },
+      user: {
+        id: user.id,
+        name: user.name,
+        role: user.role,
+        email: user.email,
+        allowed_regions: allowedRegions,
+        can_view_dashboard: canViewDashboard,
+      },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

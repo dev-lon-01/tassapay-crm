@@ -6,6 +6,8 @@ export interface AuthPayload {
   email: string;
   name: string;
   role: string;
+  allowed_regions: string[];
+  can_view_dashboard: boolean;
 }
 
 /**

@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const [rows] = await pool.execute<RowDataPacket[]>(
-      "SELECT id, name, email, role, is_active, created_at FROM users ORDER BY created_at DESC"
+      "SELECT id, name, email, role, is_active, allowed_regions, can_view_dashboard, created_at FROM users ORDER BY created_at DESC"
     );
     return NextResponse.json(rows);
   } catch (err) {
@@ -41,11 +41,13 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { name, email, password, role } = body as {
+    const { name, email, password, role, allowed_regions, can_view_dashboard } = body as {
       name?: string;
       email?: string;
       password?: string;
       role?: string;
+      allowed_regions?: string[];
+      can_view_dashboard?: boolean;
     };
 
     if (!name?.trim() || !email?.trim() || !password?.trim() || !role?.trim()) {
@@ -72,9 +74,14 @@ export async function POST(req: NextRequest) {
 
     const hash = await bcrypt.hash(password, 10);
 
+    const regions = Array.isArray(allowed_regions) && allowed_regions.length > 0
+      ? allowed_regions
+      : ["UK", "EU"];
+    const dashAccess = can_view_dashboard === true ? 1 : 0;
+
     const [result] = await pool.execute<ResultSetHeader>(
-      "INSERT INTO users (name, email, password_hash, role, is_active) VALUES (?, ?, ?, ?, 1)",
-      [name.trim(), email.trim().toLowerCase(), hash, role]
+      "INSERT INTO users (name, email, password_hash, role, is_active, allowed_regions, can_view_dashboard) VALUES (?, ?, ?, ?, 1, ?, ?)",
+      [name.trim(), email.trim().toLowerCase(), hash, role, JSON.stringify(regions), dashAccess]
     );
 
     return NextResponse.json(
@@ -84,6 +91,8 @@ export async function POST(req: NextRequest) {
         email: email.trim().toLowerCase(),
         role,
         is_active: 1,
+        allowed_regions: regions,
+        can_view_dashboard: dashAccess,
       },
       { status: 201 }
     );

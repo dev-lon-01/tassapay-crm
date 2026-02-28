@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Activity,
   AlertTriangle,
@@ -15,6 +16,7 @@ import {
   Zap,
 } from "lucide-react";
 import { apiFetch } from "@/src/lib/apiFetch";
+import { useAuth } from "@/src/context/AuthContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -111,6 +113,9 @@ function StatCard({
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function GlobalDashboard() {
+  const router = useRouter();
+  const { user, isLoading: authLoading } = useAuth();
+
   const [data, setData]               = useState<LiveData | null>(null);
   const [error, setError]             = useState<string | null>(null);
   const [loading, setLoading]         = useState(true);
@@ -121,6 +126,14 @@ export default function GlobalDashboard() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const daysRef = useRef<number>(3);
   daysRef.current = days;
+
+  // Access guard — redirect agents without dashboard permission
+  useEffect(() => {
+    if (authLoading) return;
+    if (user && user.role !== "Admin" && !user.can_view_dashboard) {
+      router.replace("/my-tasks");
+    }
+  }, [authLoading, user, router]);
 
   async function fetchLive(quiet = false) {
     if (!quiet) setLoading(true);

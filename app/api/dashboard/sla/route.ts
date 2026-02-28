@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/src/lib/db";
 import { requireAuth } from "@/src/lib/auth";
+import { buildTransferFence } from "@/src/lib/regionFence";
 import type { RowDataPacket } from "mysql2";
 
 const VALID_DAYS = new Set([3, 7, 14, 30, 60]);
@@ -22,7 +23,7 @@ const VALID_DAYS = new Set([3, 7, 14, 30, 60]);
 export async function GET(req: NextRequest) {
   const auth = requireAuth(req);
   if (auth instanceof NextResponse) return auth;
-  if (auth.role !== "Admin" && auth.role !== "Manager") {
+  if (auth.role !== "Admin" && !auth.can_view_dashboard) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -33,15 +34,21 @@ export async function GET(req: NextRequest) {
   try {
     const conn = await pool.getConnection();
     try {
+      // Build transfer fence once for this request
+      const tFence  = buildTransferFence(auth.allowed_regions ?? ["UK", "EU"], auth.role === "Admin");
+      const tAnd    = tFence ? ` AND ${tFence.sql}` : "";
+      const tParams = tFence?.params ?? [];
+
       // Metric 1: Processed but Not Paid — grouped by destination country
       const [processedRows] = await conn.query<RowDataPacket[]>(
         `SELECT destination_country, COUNT(*) AS count
          FROM   transfers
          WHERE  status = 'Processed'
            AND  created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+           ${tAnd}
          GROUP  BY destination_country
          ORDER  BY count DESC`,
-        [days],
+        [days, ...tParams],
       );
 
       // Metric 2: Payment Received but Not Processed
@@ -49,8 +56,9 @@ export async function GET(req: NextRequest) {
         `SELECT COUNT(*) AS count
          FROM   transfers
          WHERE  payment_status = 'Received'
-           AND  created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)`,
-        [days],
+           AND  created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+           ${tAnd}`,
+        [days, ...tParams],
       );
 
       // Metric 3: Canceled Transactions
@@ -58,8 +66,9 @@ export async function GET(req: NextRequest) {
         `SELECT COUNT(*) AS count
          FROM   transfers
          WHERE  status = 'Cancel'
-           AND  created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)`,
-        [days],
+           AND  created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+           ${tAnd}`,
+        [days, ...tParams],
       );
 
       return NextResponse.json({

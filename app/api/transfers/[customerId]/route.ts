@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/src/lib/db";
 import { requireAuth } from "@/src/lib/auth";
+import { buildCountryFence } from "@/src/lib/regionFence";
 import type { RowDataPacket } from "mysql2";
 
 /**
@@ -21,6 +22,19 @@ export async function GET(
   try {
     const { customerId } = params;
 
+    // Region fence: verify the customer is in the caller's allowed regions
+    if (auth.role !== "Admin") {
+      const fence = buildCountryFence(auth.allowed_regions ?? ["UK", "EU"], false);
+      if (fence) {
+        const [checkRows] = await pool.execute<RowDataPacket[]>(
+          `SELECT 1 FROM customers WHERE customer_id = ? AND (${fence.sql}) LIMIT 1`,
+          [customerId, ...fence.params],
+        );
+        if (!Array.isArray(checkRows) || checkRows.length === 0) {
+          return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+      }
+    }
     const { searchParams } = new URL(req.url);
     const page  = Math.max(1, parseInt(searchParams.get("page")  ?? "1",  10));
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") ?? "20", 10)));

@@ -23,10 +23,13 @@ interface StaffUser {
   email: string;
   role: string;
   is_active: number;
+  allowed_regions: string[] | string;
+  can_view_dashboard: number | boolean;
   created_at: string;
 }
 
-const ROLES = ["Admin", "Agent"] as const;
+const ROLES    = ["Admin", "Agent"] as const;
+const REGIONS  = ["UK", "EU"] as const;
 type Role = (typeof ROLES)[number];
 
 // ─── role badge ───────────────────────────────────────────────────────────────
@@ -74,13 +77,22 @@ interface ModalProps {
 function UserModal({ user, onClose, onSaved }: ModalProps) {
   const isEdit = !!user;
 
-  const [name, setName]           = useState(user?.name ?? "");
-  const [email, setEmail]         = useState(user?.email ?? "");
-  const [role, setRole]           = useState<Role>((user?.role as Role) ?? "Agent");
-  const [isActive, setIsActive]   = useState(user?.is_active !== 0);
-  const [password, setPassword]   = useState("");
-  const [saving, setSaving]       = useState(false);
-  const [error, setError]         = useState("");
+  // Parse allowed_regions — may arrive as a JSON string from MySQL
+  const initialRegions: string[] = (() => {
+    if (!user?.allowed_regions) return ["UK", "EU"];
+    if (Array.isArray(user.allowed_regions)) return user.allowed_regions as string[];
+    try { return JSON.parse(user.allowed_regions as string); } catch { return ["UK", "EU"]; }
+  })();
+
+  const [name, setName]                     = useState(user?.name ?? "");
+  const [email, setEmail]                   = useState(user?.email ?? "");
+  const [role, setRole]                     = useState<Role>((user?.role as Role) ?? "Agent");
+  const [isActive, setIsActive]             = useState(user?.is_active !== 0);
+  const [allowedRegions, setAllowedRegions] = useState<string[]>(initialRegions);
+  const [canViewDash, setCanViewDash]       = useState(Boolean(user?.can_view_dashboard));
+  const [password, setPassword]             = useState("");
+  const [saving, setSaving]                 = useState(false);
+  const [error, setError]                   = useState("");
 
   // reset-password sub-prompt
   const [showResetPw, setShowResetPw]   = useState(false);
@@ -93,10 +105,16 @@ function UserModal({ user, onClose, onSaved }: ModalProps) {
     setSaving(true);
     setError("");
 
+    if (allowedRegions.length === 0) {
+      setError("At least one region must be selected");
+      setSaving(false);
+      return;
+    }
+
     try {
       const body = isEdit
-        ? { name, email, role, is_active: isActive }
-        : { name, email, role, password };
+        ? { name, email, role, is_active: isActive, allowed_regions: allowedRegions, can_view_dashboard: canViewDash }
+        : { name, email, role, password, allowed_regions: allowedRegions, can_view_dashboard: canViewDash };
 
       const res = await apiFetch(
         isEdit ? `/api/users/${user!.id}` : "/api/users",
@@ -222,9 +240,58 @@ function UserModal({ user, onClose, onSaved }: ModalProps) {
           </select>
         </div>
 
+        {/* Allowed Regions */}
+        <div className="space-y-2">
+          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Allowed Regions
+          </label>
+          <div className="flex gap-4">
+            {REGIONS.map((r) => (
+              <label key={r} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={allowedRegions.includes(r)}
+                  onChange={() =>
+                    setAllowedRegions((prev) =>
+                      prev.includes(r)
+                        ? prev.filter((x) => x !== r)
+                        : [...prev, r]
+                    )
+                  }
+                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-400"
+                />
+                <span className="text-sm font-medium text-slate-700">{r}</span>
+              </label>
+            ))}
+          </div>
+          {allowedRegions.length === 0 && (
+            <p className="text-xs text-rose-500">At least one region must be selected</p>
+          )}
+        </div>
+
+        {/* Manager Dashboard Access toggle */}
+        <div className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3">
+          <div>
+            <span className="text-sm font-medium text-slate-700">Manager Dashboard Access</span>
+            <p className="text-xs text-slate-400">Grants access to the live command-centre dashboard</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setCanViewDash((v) => !v)}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              canViewDash ? "bg-indigo-500" : "bg-slate-300"
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                canViewDash ? "translate-x-6" : "translate-x-1"
+              }`}
+            />
+          </button>
+        </div>
+
         {/* password — only on create */}
-        {!isEdit && (
-          <div className="space-y-1">
+        {!isEdit && (          <div className="space-y-1">
             <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Temporary Password
             </label>

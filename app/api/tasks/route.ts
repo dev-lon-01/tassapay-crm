@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/src/lib/db";
 import { requireAuth } from "@/src/lib/auth";
+import { buildCountryFence } from "@/src/lib/regionFence";
 import type { RowDataPacket } from "mysql2";
 
 /**
@@ -78,6 +79,13 @@ export async function GET(req: NextRequest) {
     if (country) {
       extraWhere += ` AND c.country = ?`;
       params.push(country);
+    }
+
+    // ── Region fence (non-Admin only) ─────────────────────────────────────
+    const fence = buildCountryFence(auth.allowed_regions ?? ["UK", "EU"], auth.role === "Admin");
+    if (fence) {
+      extraWhere += ` AND c.${fence.sql}`;
+      params.push(...fence.params);
     }
 
     const countSql = `SELECT COUNT(*) AS total FROM customers c WHERE ${baseWhere}${extraWhere}`;

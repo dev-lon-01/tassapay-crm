@@ -16,6 +16,8 @@ export interface AuthUser {
   name: string;
   email: string;
   role: string;
+  allowed_regions: string[];
+  can_view_dashboard: boolean;
 }
 
 interface AuthContextValue {

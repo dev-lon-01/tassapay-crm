@@ -211,7 +211,7 @@ export default function CustomerProfilePage({
   useEffect(() => {
     apiFetch(`/api/customers/${params.id}`)
       .then((r) => {
-        if (r.status === 404) {
+        if (r.status === 403 || r.status === 404) {
           setNotFound(true);
           setLoading(false);
           return null;

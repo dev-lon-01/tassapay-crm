@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/src/lib/db";
 import { requireAuth } from "@/src/lib/auth";
+import { buildCountryFence } from "@/src/lib/regionFence";
 import type { RowDataPacket } from "mysql2";
 
 /**
@@ -34,15 +35,18 @@ export async function GET(req: NextRequest) {
     // ── Phone lookup for screen pop (returns a single customer or 404) ──────
     if (phone) {
       const normalized = phone.replace(/\s/g, "");
+      const phoneFence = buildCountryFence(auth.allowed_regions ?? ["UK", "EU"], auth.role === "Admin");
+      const phoneFenceClause = phoneFence ? `AND ${phoneFence.sql}` : "";
       const [rows] = await pool.execute<RowDataPacket[]>(
         `SELECT customer_id, full_name, email, phone_number, country,
                 registration_date, kyc_completion_date, risk_status,
                 (SELECT COUNT(*) FROM transfers t WHERE t.customer_id = customers.customer_id) AS total_transfers
          FROM   customers
-         WHERE  REPLACE(phone_number, ' ', '') = ?
-            OR  REPLACE(phone_number, ' ', '') = ?
+         WHERE  (REPLACE(phone_number, ' ', '') = ?
+            OR  REPLACE(phone_number, ' ', '') = ?)
+           ${phoneFenceClause}
          LIMIT 1`,
-        [normalized, normalized.replace(/^\+/, "")]
+        [normalized, normalized.replace(/^\+/, ""), ...(phoneFence?.params ?? [])]
       );
       if (!Array.isArray(rows) || rows.length === 0) {
         return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -70,6 +74,13 @@ export async function GET(req: NextRequest) {
     if (search) {
       conditions.push("(full_name LIKE ? OR customer_id LIKE ?)");
       params.push(`%${search}%`, `%${search}%`);
+    }
+
+    // ── Region fence (non-Admin only) ─────────────────────────────────────────
+    const fence = buildCountryFence(auth.allowed_regions ?? ["UK", "EU"], auth.role === "Admin");
+    if (fence) {
+      conditions.push(fence.sql);
+      params.push(...fence.params);
     }
 
     const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";

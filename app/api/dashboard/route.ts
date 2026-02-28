@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/src/lib/db";
 import { requireAuth } from "@/src/lib/auth";
+import { buildCountryFence } from "@/src/lib/regionFence";
 import type { RowDataPacket } from "mysql2";
 
 /**
@@ -17,14 +18,22 @@ export async function GET(req: NextRequest) {
   try {
     const conn = await pool.getConnection();
     try {
+      // Build region fence once for all 3 queries
+      const fence = buildCountryFence(auth.allowed_regions ?? ["UK", "EU"], auth.role === "Admin");
+      const fenceClause = fence ? `WHERE ${fence.sql}` : "";
+      const fenceParams = fence?.params ?? [];
+
       const [[{ totalUsers }]] = await conn.query<RowDataPacket[]>(
-        "SELECT COUNT(*) AS totalUsers FROM customers"
+        `SELECT COUNT(*) AS totalUsers FROM customers ${fenceClause}`,
+        fenceParams,
       );
       const [[{ pendingKyc }]] = await conn.query<RowDataPacket[]>(
-        "SELECT COUNT(*) AS pendingKyc FROM customers WHERE kyc_completion_date IS NULL"
+        `SELECT COUNT(*) AS pendingKyc FROM customers WHERE kyc_completion_date IS NULL${fence ? ` AND ${fence.sql}` : ""}`,
+        fenceParams,
       );
       const [[{ zeroTransfers }]] = await conn.query<RowDataPacket[]>(
-        "SELECT COUNT(*) AS zeroTransfers FROM customers WHERE total_transfers = 0"
+        `SELECT COUNT(*) AS zeroTransfers FROM customers WHERE total_transfers = 0${fence ? ` AND ${fence.sql}` : ""}`,
+        fenceParams,
       );
 
       return NextResponse.json({

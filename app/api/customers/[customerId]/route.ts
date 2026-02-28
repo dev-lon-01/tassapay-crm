@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/src/lib/db";
 import { requireAuth } from "@/src/lib/auth";
+import { getAllowedCountries } from "@/src/lib/regionFence";
 import type { RowDataPacket } from "mysql2";
 
 /**
@@ -29,6 +30,14 @@ export async function GET(
 
     if (!customerRows.length) {
       return NextResponse.json({ error: "Customer not found" }, { status: 404 });
+    }
+
+    // Region fence: non-Admin users may only view customers in their allowed regions
+    if (auth.role !== "Admin") {
+      const allowed = getAllowedCountries(auth.allowed_regions ?? ["UK", "EU"]);
+      if (!allowed.includes(customerRows[0].country)) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
     }
 
     // 2. Interaction timeline (joined with agent name)
