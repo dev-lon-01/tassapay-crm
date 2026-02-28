@@ -31,6 +31,7 @@ import { normalizePhone } from "@/src/lib/phoneUtils";
 import { apiFetch } from "@/src/lib/apiFetch";
 import { useQueue, type TaskStatus } from "@/src/context/QueueContext";
 import { useTwilioVoice } from "@/src/context/TwilioVoiceContext";
+import { useAuth } from "@/src/context/AuthContext";
 
 interface ApiCustomer {
   customer_id: string;
@@ -169,6 +170,7 @@ export default function CustomerProfilePage({
   const router = useRouter();
   const { queuePosition, sortedQueue, activeTab: queueTab, setTaskStatus } = useQueue();
   const { makeCall, callState, callerInfo, callDuration, isMuted, toggleMute, hangUp } = useTwilioVoice();
+  const { user } = useAuth();
   const focusPosition = queuePosition(params.id);
   const [customer, setCustomer] = useState<ApiCustomer | null>(null);
   const [timeline, setTimeline] = useState<ApiInteraction[]>([]);
@@ -289,7 +291,7 @@ export default function CustomerProfilePage({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             customerId: params.id,
-            agentId: null,
+            agentId: user?.id ?? null,
             overridePhone: smsTo.trim(),
             message: smsMessage.trim(),
           }),
@@ -308,7 +310,7 @@ export default function CustomerProfilePage({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             customerId: params.id,
-            agentId: null,
+            agentId: user?.id ?? null,
             overrideEmail: emailTo.trim(),
             subject: emailSubject.trim(),
             message: emailBody.trim(),
@@ -329,7 +331,7 @@ export default function CustomerProfilePage({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             customerId: params.id,
-            agentId: null,
+            agentId: user?.id ?? null,
             type: "Note",
             outcome: noteOutcome,
             note: noteText.trim(),
@@ -372,7 +374,7 @@ export default function CustomerProfilePage({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           customerId: params.id,
-          agentId: null,
+          agentId: user?.id ?? null,
           type: "Note",
           outcome: focusOutcome,
           note: focusNote.trim() || null,
