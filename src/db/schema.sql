@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS `users` (
   `password_hash` VARCHAR(255)  DEFAULT NULL,
   `is_active`          TINYINT(1)    NOT NULL DEFAULT 1,
   `voice_available`    TINYINT(1)    NOT NULL DEFAULT 0,
+  `sip_username`       VARCHAR(100)  DEFAULT NULL,                       -- Twilio SIP domain username (e.g. abdi)
   `allowed_regions`    JSON          NOT NULL DEFAULT ('["UK","EU"]'),   -- e.g. ["UK","EU"]
   `can_view_dashboard` TINYINT(1)    NOT NULL DEFAULT 0,                 -- grants Agent access to Manager Dashboard
   `created_at`         DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,

@@ -26,11 +26,12 @@ export async function PUT(
 
   try {
     const body = await req.json();
-    const { name, email, role, is_active, allowed_regions, can_view_dashboard } = body as {
+    const { name, email, role, is_active, sip_username, allowed_regions, can_view_dashboard } = body as {
       name?: string;
       email?: string;
       role?: string;
       is_active?: boolean | number;
+      sip_username?: string;
       allowed_regions?: string[];
       can_view_dashboard?: boolean;
     };
@@ -55,10 +56,11 @@ export async function PUT(
       ? allowed_regions
       : ["UK", "EU"];
     const dashAccess = can_view_dashboard === true ? 1 : 0;
+    const sipUser    = sip_username?.trim() || null;
 
     const [result] = await pool.execute<ResultSetHeader>(
-      "UPDATE users SET name = ?, email = ?, role = ?, is_active = ?, allowed_regions = ?, can_view_dashboard = ? WHERE id = ?",
-      [name.trim(), email.trim().toLowerCase(), role, activeVal, JSON.stringify(regions), dashAccess, userId]
+      "UPDATE users SET name = ?, email = ?, role = ?, is_active = ?, sip_username = ?, allowed_regions = ?, can_view_dashboard = ? WHERE id = ?",
+      [name.trim(), email.trim().toLowerCase(), role, activeVal, sipUser, JSON.stringify(regions), dashAccess, userId]
     );
 
     if (result.affectedRows === 0) {
@@ -66,7 +68,7 @@ export async function PUT(
     }
 
     const [rows] = await pool.execute<RowDataPacket[]>(
-      "SELECT id, name, email, role, is_active, allowed_regions, can_view_dashboard, created_at FROM users WHERE id = ?",
+      "SELECT id, name, email, role, is_active, sip_username, allowed_regions, can_view_dashboard, created_at FROM users WHERE id = ?",
       [userId]
     );
 

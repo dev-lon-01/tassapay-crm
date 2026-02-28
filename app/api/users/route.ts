@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const [rows] = await pool.execute<RowDataPacket[]>(
-      "SELECT id, name, email, role, is_active, allowed_regions, can_view_dashboard, created_at FROM users ORDER BY created_at DESC"
+      "SELECT id, name, email, role, is_active, sip_username, allowed_regions, can_view_dashboard, created_at FROM users ORDER BY created_at DESC"
     );
     return NextResponse.json(rows);
   } catch (err) {
@@ -41,11 +41,12 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { name, email, password, role, allowed_regions, can_view_dashboard } = body as {
+    const { name, email, password, role, sip_username, allowed_regions, can_view_dashboard } = body as {
       name?: string;
       email?: string;
       password?: string;
       role?: string;
+      sip_username?: string;
       allowed_regions?: string[];
       can_view_dashboard?: boolean;
     };
@@ -79,9 +80,11 @@ export async function POST(req: NextRequest) {
       : ["UK", "EU"];
     const dashAccess = can_view_dashboard === true ? 1 : 0;
 
+    const sipUser = sip_username?.trim() || null;
+
     const [result] = await pool.execute<ResultSetHeader>(
-      "INSERT INTO users (name, email, password_hash, role, is_active, allowed_regions, can_view_dashboard) VALUES (?, ?, ?, ?, 1, ?, ?)",
-      [name.trim(), email.trim().toLowerCase(), hash, role, JSON.stringify(regions), dashAccess]
+      "INSERT INTO users (name, email, password_hash, role, is_active, sip_username, allowed_regions, can_view_dashboard) VALUES (?, ?, ?, ?, 1, ?, ?, ?)",
+      [name.trim(), email.trim().toLowerCase(), hash, role, sipUser, JSON.stringify(regions), dashAccess]
     );
 
     return NextResponse.json(
@@ -91,6 +94,7 @@ export async function POST(req: NextRequest) {
         email: email.trim().toLowerCase(),
         role,
         is_active: 1,
+        sip_username: sipUser,
         allowed_regions: regions,
         can_view_dashboard: dashAccess,
       },
