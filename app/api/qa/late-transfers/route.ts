@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/src/lib/db";
 import { requireAuth } from "@/src/lib/auth";
+import { buildCountryFence } from "@/src/lib/regionFence";
 import type { RowDataPacket } from "mysql2";
 
 /**
@@ -56,6 +57,13 @@ export async function GET(req: NextRequest) {
   const auth = requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
+  // Region fence: Admins see all rows; Agents see only their allowed_regions.
+  // The SELECT already LEFT JOINs customers as `c`, so filtering on `country`
+  // (which only exists on the customers table) is unambiguous.
+  const cFence  = buildCountryFence(auth.allowed_regions ?? ["UK", "EU"], auth.role === "Admin");
+  const cAnd    = cFence ? ` AND ${cFence.sql}` : "";
+  const cParams = cFence?.params ?? [];
+
   try {
     const [
       [somaliaUrgent],
@@ -69,9 +77,11 @@ export async function GET(req: NextRequest) {
            AND ${PENDING}
            AND t.created_at <= DATE_SUB(NOW(), INTERVAL 15 MINUTE)
            AND t.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-         ORDER BY t.created_at ASC`
+           ${cAnd}
+         ORDER BY t.created_at ASC`,
+        cParams
       ),
-      // Standard — 1 day late (24–48 h window)
+      // Standard — 1 day late (24-48 h window)
       pool.execute<LateTransfer[]>(
         `${SELECT}
          WHERE t.destination_country != 'Somalia'
@@ -79,7 +89,9 @@ export async function GET(req: NextRequest) {
            AND t.created_at <= DATE_SUB(NOW(), INTERVAL 1 DAY)
            AND t.created_at >  DATE_SUB(NOW(), INTERVAL 2 DAY)
            AND t.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-         ORDER BY t.created_at ASC`
+           ${cAnd}
+         ORDER BY t.created_at ASC`,
+        cParams
       ),
       // Standard — 2+ days late (> 48 h)
       pool.execute<LateTransfer[]>(
@@ -88,7 +100,9 @@ export async function GET(req: NextRequest) {
            AND ${PENDING}
            AND t.created_at <= DATE_SUB(NOW(), INTERVAL 2 DAY)
            AND t.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-         ORDER BY t.created_at ASC`
+           ${cAnd}
+         ORDER BY t.created_at ASC`,
+        cParams
       ),
     ]);
 
