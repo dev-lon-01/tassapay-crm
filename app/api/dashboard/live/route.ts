@@ -35,6 +35,14 @@ export async function GET(req: NextRequest) {
       const cParams = cFence?.params ?? [];
       const tParams = tFence?.params ?? [];
 
+      // ── QA VERIFICATION LOGGING ───────────────────────────────────────────
+      // Remove this block after QA sign-off.
+      const _regionLabel = isAdmin ? "Admin (no fence)" : `regions=[${regions.join(",")}]`;
+      console.log(`[QA][dashboard/live] ${_regionLabel}`);
+      console.log(`[QA][Somalia breach SQL] SELECT COUNT(*) AS somaliaBreached FROM transfers WHERE destination_country='Somalia' AND status NOT IN ('Completed','Deposited','Cancel') AND created_at <= DATE_SUB(NOW(), INTERVAL 15 MINUTE)${tFence ? ` AND ${tFence.sql} -- params: ${JSON.stringify(tParams)}` : ""}`);
+      console.log(`[QA][Standard breach SQL] SELECT COUNT(*) AS standardBreached FROM transfers WHERE status NOT IN ('Completed','Deposited','Cancel') AND created_at <= DATE_SUB(NOW(), INTERVAL 24 HOUR)${tFence ? ` AND ${tFence.sql} -- params: ${JSON.stringify(tParams)}` : ""}`);
+      // ─────────────────────────────────────────────────────────────────────
+
       // ── Health ────────────────────────────────────────────────────────────
 
       // Somalia transfers pending > 15 minutes

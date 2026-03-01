@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock,
+  Globe,
   RefreshCw,
   ShieldAlert,
   TrendingUp,
@@ -45,6 +46,17 @@ interface SlaData {
   canceled: number;
 }
 
+// ─── Stats Types ──────────────────────────────────────────────────────────────
+
+interface StatsRow {
+  total_transfers: number;
+  total_revenue: number;
+}
+interface StatsData {
+  byCurrency:    Array<StatsRow & { currency: string | null }>;
+  byDestination: Array<StatsRow & { destination: string | null }>;
+}
+
 const DAYS_OPTIONS = [
   { label: "Last 3 Days",  value: 3  },
   { label: "Last 7 Days",  value: 7  },
@@ -68,6 +80,9 @@ function fmtTime(iso: string | null): string {
     second: "2-digit",
   });
 }
+
+const fmtRevenue = (amount: number) =>
+  new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 0 }).format(amount);
 
 // ─── StatCard ─────────────────────────────────────────────────────────────────
 
@@ -123,6 +138,8 @@ export default function GlobalDashboard() {
   const [days, setDays]               = useState<number>(3);
   const [slaData, setSlaData]         = useState<SlaData | null>(null);
   const [slaLoading, setSlaLoading]   = useState(true);
+  const [statsData,    setStatsData]    = useState<StatsData | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const daysRef = useRef<number>(3);
   daysRef.current = days;
@@ -166,10 +183,25 @@ export default function GlobalDashboard() {
     }
   }
 
+  async function fetchStats(quiet = false) {
+    if (!quiet) setStatsLoading(true);
+    try {
+      const res = await apiFetch(`/api/dashboard/stats?days=${daysRef.current}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json: StatsData = await res.json();
+      setStatsData(json);
+    } catch {
+      if (!quiet) setStatsData(null);
+    } finally {
+      if (!quiet) setStatsLoading(false);
+    }
+  }
+
   useEffect(() => {
     fetchLive();
     fetchSla();
-    intervalRef.current = setInterval(() => { fetchLive(true); fetchSla(true); }, 60_000);
+    fetchStats();
+    intervalRef.current = setInterval(() => { fetchLive(true); fetchSla(true); fetchStats(true); }, 60_000);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
@@ -178,6 +210,7 @@ export default function GlobalDashboard() {
 
   useEffect(() => {
     fetchSla();
+    fetchStats();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [days]);
 
@@ -210,7 +243,7 @@ export default function GlobalDashboard() {
                 <><RefreshCw className="h-3 w-3 animate-spin" /> Loading…</>
               )}
             </p>
-            <h1 className="text-2xl font-bold tracking-tight md:text-3xl">{greeting}, Admin.</h1>
+            <h1 className="text-2xl font-bold tracking-tight md:text-3xl">{greeting}, {user?.name?.split(" ")[0] ?? "…"}.</h1>
             <p className="mt-1 text-sm text-slate-300">Live operational command centre.</p>
           </div>
 
@@ -440,6 +473,69 @@ export default function GlobalDashboard() {
             accent={(data?.health.standardBreached ?? 0) > 0 ? "amber" : "emerald"}
           />
         </div>
+      </div>
+
+      {/* ── Volume Widgets ───────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+
+        {/* Widget 1: Volume by Currency */}
+        <div>
+          <h2 className="mb-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Volume by Currency</h2>
+          <article className="rounded-3xl border border-sky-200/90 bg-gradient-to-br from-sky-50 to-white p-5 shadow-md">
+            {statsLoading ? (
+              <p className="text-sm text-sky-400">Loading…</p>
+            ) : !statsData || statsData.byCurrency.length === 0 ? (
+              <p className="text-sm text-slate-400">No data for this period.</p>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {statsData.byCurrency.map((row) => (
+                  <li key={row.currency ?? "unknown"} className="flex items-center justify-between py-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-sky-100 text-sky-700">
+                        <span className="text-[10px] font-black">{(row.currency ?? "?").slice(0, 3)}</span>
+                      </div>
+                      <span className="text-xs font-bold uppercase tracking-wider text-sky-700">{row.currency ?? "Unknown"}</span>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-black text-slate-800">{fmtRevenue(row.total_revenue)}</p>
+                      <p className="text-xs text-slate-400">{row.total_transfers.toLocaleString("en-GB")} transfers</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </article>
+        </div>
+
+        {/* Widget 2: Volume by Destination */}
+        <div>
+          <h2 className="mb-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Volume by Destination</h2>
+          <article className="rounded-3xl border border-violet-200/90 bg-gradient-to-br from-violet-50 to-white p-5 shadow-md">
+            {statsLoading ? (
+              <p className="text-sm text-violet-400">Loading…</p>
+            ) : !statsData || statsData.byDestination.length === 0 ? (
+              <p className="text-sm text-slate-400">No data for this period.</p>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {statsData.byDestination.map((row) => (
+                  <li key={row.destination ?? "unknown"} className="flex items-center justify-between py-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-violet-100 text-violet-700">
+                        <Globe className="h-3.5 w-3.5" />
+                      </div>
+                      <span className="text-xs font-semibold text-violet-700">{row.destination ?? "Unknown"}</span>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-black text-slate-800">{fmtRevenue(row.total_revenue)}</p>
+                      <p className="text-xs text-slate-400">{row.total_transfers.toLocaleString("en-GB")} transfers</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </article>
+        </div>
+
       </div>
 
       {/* ── Error state ──────────────────────────────────────────────────── */}

@@ -1,4 +1,14 @@
+"use client";
+
+import { useAuth } from "@/src/context/AuthContext";
+
 export function AppHeader() {
+  const { user, isLoading } = useAuth();
+
+  const initials = user?.name
+    ? user.name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase()
+    : "…";
+
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/80 px-4 py-3 backdrop-blur-xl md:px-6">
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between">
@@ -19,11 +29,20 @@ export function AppHeader() {
             <span className="text-xs font-semibold text-emerald-700">System Healthy</span>
           </div>
           <div className="hidden text-right sm:block">
-            <p className="text-sm font-semibold text-slate-800">Admin User</p>
-            <p className="text-xs text-slate-500">Risk & Compliance</p>
+            {isLoading ? (
+              <>
+                <div className="h-4 w-24 animate-pulse rounded bg-slate-200" />
+                <div className="mt-1 h-3 w-16 animate-pulse rounded bg-slate-100" />
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-semibold text-slate-800">{user?.name ?? "—"}</p>
+                <p className="text-xs text-slate-500">{user?.role ?? "—"}</p>
+              </>
+            )}
           </div>
           <div className="grid h-10 w-10 place-items-center rounded-full border border-slate-200 bg-gradient-to-b from-slate-700 to-slate-950 text-sm font-semibold text-white shadow-sm">
-            AU
+            {initials}
           </div>
         </div>
       </div>
