@@ -7,15 +7,17 @@ import type { RowDataPacket } from "mysql2";
 /**
  * GET /api/activity/agents
  *
- * Returns the most recent agent interactions across all customers,
- * fenced to the caller's allowed regions.
+ * Returns agent interactions across all customers, fenced to the caller's allowed regions.
  *
  * Query params (all optional):
  *   ?region=UK|EU   – further filter to a single region (must be within caller's allowed_regions)
- *   ?limit=50        – max records (default 50, max 200)
+ *   ?type=Call|SMS|Note  – filter by interaction type
+ *   ?limit=50        – records per page (default 50, max 200)
+ *   ?page=1          – 1-based page number (default 1)
  *
  * Response: Array of {
  *   id, type, outcome, note, created_at,
+ *   call_duration_seconds, phone_number,
  *   agent_name, customer_name, customer_country
  * }
  */
@@ -25,7 +27,10 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const regionParam = searchParams.get("region");
-  const limit = Math.min(200, Math.max(1, Number(searchParams.get("limit") ?? 50)));
+  const typeParam   = searchParams.get("type");   // e.g. "Call", "SMS", "Note"
+  const limit  = Math.min(200, Math.max(1, Number(searchParams.get("limit") ?? 50)));
+  const page   = Math.max(1, Number(searchParams.get("page") ?? 1));
+  const offset = (page - 1) * limit;
 
   // Determine effective regions: caller's allowed regions, optionally narrowed by ?region=
   const callerRegions = auth.allowed_regions ?? ["UK", "EU"];
@@ -49,6 +54,9 @@ export async function GET(req: NextRequest) {
     const fenceClause = fence ? `AND c.country IN (${fence.params.map(() => "?").join(",")})` : "";
     const fenceParams = fence?.params ?? [];
 
+    const typeClause  = typeParam ? "AND i.type = ?" : "";
+    const typeParams  = typeParam ? [typeParam] : [];
+
     const [rows] = await pool.execute<RowDataPacket[]>(
       `SELECT
          i.id,
@@ -56,7 +64,9 @@ export async function GET(req: NextRequest) {
          i.outcome,
          i.note,
          i.created_at,
-         u.name  AS agent_name,
+         i.call_duration_seconds,
+         c.phone_number,
+         u.name      AS agent_name,
          c.full_name AS customer_name,
          c.country   AS customer_country
        FROM   interactions i
@@ -64,9 +74,10 @@ export async function GET(req: NextRequest) {
        LEFT JOIN users u  ON u.id = i.agent_id
        WHERE  i.agent_id IS NOT NULL
          ${fenceClause}
+         ${typeClause}
        ORDER BY i.created_at DESC
-       LIMIT ${limit}`,
-      fenceParams,
+       LIMIT ${limit} OFFSET ${offset}`,
+      [...fenceParams, ...typeParams],
     );
 
     return NextResponse.json(rows);

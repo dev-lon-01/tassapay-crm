@@ -3,21 +3,8 @@
 import { useState } from "react";
 import { Phone, X, Loader2 } from "lucide-react";
 import { useTwilioVoice } from "@/src/context/TwilioVoiceContext";
+import { useDropdowns } from "@/src/context/DropdownsContext";
 import { apiFetch } from "@/src/lib/apiFetch";
-
-const CALL_OUTCOMES = [
-  "Select outcome…",
-  "Spoke with Customer",
-  "No Answer",
-  "Left Voicemail",
-  "Left SMS",
-  "Promised to Upload ID",
-  "Guided Through App",
-  "Requested Call Back",
-  "Not Interested",
-  "Wrong Number",
-  "Escalated to Compliance",
-];
 
 function formatDuration(secs: number): string {
   const m = Math.floor(secs / 60).toString().padStart(2, "0");
@@ -27,8 +14,19 @@ function formatDuration(secs: number): string {
 
 export function PostCallModal() {
   const { lastEndedCall, clearLastEndedCall } = useTwilioVoice();
+  const { callOutcomes } = useDropdowns();
 
-  const [outcome, setOutcome] = useState(CALL_OUTCOMES[0]);
+  // Prepend placeholder; fall back to hardcoded list if DB hasn't loaded yet
+  const OUTCOMES = [
+    "Select outcome…",
+    ...(callOutcomes.length > 0
+      ? callOutcomes
+      : ["Spoke with Customer","No Answer","Left Voicemail","Left SMS",
+         "Promised to Upload ID","Guided Through App","Requested Call Back",
+         "Not Interested","Wrong Number","Escalated to Compliance"]),
+  ];
+
+  const [outcome, setOutcome] = useState(OUTCOMES[0]);
   const [note, setNote]       = useState("");
   const [saving, setSaving]   = useState(false);
   const [error, setError]     = useState<string | null>(null);
@@ -36,28 +34,34 @@ export function PostCallModal() {
   if (!lastEndedCall) return null;
 
   async function handleSave() {
-    if (!lastEndedCall || outcome === CALL_OUTCOMES[0]) return;
+    if (!lastEndedCall || outcome === OUTCOMES[0]) return;
+    if (!lastEndedCall.customerId) {
+      setError("Cannot save log — customer context was lost. Use Skip.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
+      const payload = {
+        customerId: lastEndedCall.customerId,
+        agentId: null,
+        type: "Call",
+        outcome,
+        note: note.trim() || null,
+        twilio_call_sid: lastEndedCall.callSid,
+        call_duration_seconds: lastEndedCall.durationSeconds,
+      };
+      console.log("Sending interaction payload:", payload);
       const res = await apiFetch("/api/interactions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          customerId: lastEndedCall.customerId ?? "__unknown__",
-          agentId: null,
-          type: "Call",
-          outcome,
-          note: note.trim() || null,
-          twilio_call_sid: lastEndedCall.callSid,
-          call_duration_seconds: lastEndedCall.durationSeconds,
-        }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({})) as { error?: string };
         throw new Error(data.error ?? "Failed to save");
       }
-      setOutcome(CALL_OUTCOMES[0]);
+      setOutcome(OUTCOMES[0]);
       setNote("");
       clearLastEndedCall();
     } catch (err) {
@@ -68,7 +72,7 @@ export function PostCallModal() {
   }
 
   function handleSkip() {
-    setOutcome(CALL_OUTCOMES[0]);
+    setOutcome(OUTCOMES[0]);
     setNote("");
     setError(null);
     clearLastEndedCall();
@@ -120,8 +124,8 @@ export function PostCallModal() {
               onChange={(e) => setOutcome(e.target.value)}
               className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-400"
             >
-              {CALL_OUTCOMES.map((o) => (
-                <option key={o} value={o} disabled={o === CALL_OUTCOMES[0]}>
+              {OUTCOMES.map((o) => (
+                <option key={o} value={o} disabled={o === OUTCOMES[0]}>
                   {o}
                 </option>
               ))}
@@ -152,7 +156,7 @@ export function PostCallModal() {
           </button>
           <button
             onClick={handleSave}
-            disabled={saving || outcome === CALL_OUTCOMES[0]}
+            disabled={saving || outcome === OUTCOMES[0] || !lastEndedCall?.customerId}
             className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
           >
             {saving ? (

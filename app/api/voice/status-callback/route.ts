@@ -36,8 +36,8 @@ export async function POST(req: NextRequest) {
     return new NextResponse("Forbidden", { status: 403 });
   }
 
-  const callSid        = params["CallSid"]        ?? params["ParentCallSid"] ?? "";
-  const recordingUrl   = params["RecordingUrl"]   ?? "";
+  const callSid      = params["CallSid"]      ?? params["ParentCallSid"] ?? "";
+  const recordingUrl = params["RecordingUrl"] ?? "";
 
   // ── Case 1: Recording ready ─────────────────────────────────────────────────
   if (recordingUrl) {
@@ -56,9 +56,13 @@ export async function POST(req: NextRequest) {
   const direction   = params["Direction"]      ?? "";
   const fromNumber  = params["From"]           ?? params["Called"]    ?? "";
 
-  const isMissed   = direction === "inbound" &&
+  // Guard: outbound calls from the browser client have From = "client:<identity>"
+  // Their status-callbacks should never trigger voicemail or missed-call logging.
+  const isFromAgent = fromNumber.startsWith("client:");
+
+  const isMissed   = !isFromAgent && direction === "inbound" &&
     (dialStatus === "no-answer" || dialStatus === "busy" || dialStatus === "failed");
-  const isAnswered = direction === "inbound" && dialStatus === "completed";
+  const isAnswered = !isFromAgent && direction === "inbound" && dialStatus === "completed";
 
   if ((isMissed || isAnswered) && fromNumber) {
     // Look up customer by phone number (shared by both branches)

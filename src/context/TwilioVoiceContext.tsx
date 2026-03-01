@@ -32,7 +32,7 @@ interface TwilioVoiceContextValue {
   deviceError: string | null;
   deviceReady: boolean;
   lastEndedCall: EndedCall | null;
-  makeCall: (phoneNumber: string, displayName?: string) => void;
+  makeCall: (phoneNumber: string, displayName?: string, customerId?: string | null) => void;
   acceptCall: () => void;
   rejectCall: () => void;
   hangUp: () => void;
@@ -54,11 +54,11 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
   const deviceRef             = useRef<Device | null>(null);
   const activeCallRef         = useRef<Call | null>(null);
   const timerRef              = useRef<ReturnType<typeof setInterval> | null>(null);
-  const callDurationRef       = useRef(0);   // parallel ref to avoid stale closures
-  const callSidRef            = useRef<string | null>(null);
-  const callerInfoRef         = useRef<string | null>(null);
-  const incomingCustomerIdRef = useRef<string | null>(null);
-  const ringAudioRef          = useRef<HTMLAudioElement | null>(null);
+  const callDurationRef          = useRef(0);   // parallel ref to avoid stale closures
+  const callSidRef               = useRef<string | null>(null);
+  const callerInfoRef            = useRef<string | null>(null);
+  const activeCallCustomerIdRef  = useRef<string | null>(null);
+  const ringAudioRef             = useRef<HTMLAudioElement | null>(null);
 
   const [callState, setCallState]         = useState<CallState>("idle");
   const [callerInfo, setCallerInfo]       = useState<string | null>(null);
@@ -142,12 +142,12 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
       const durationSnap = callDurationRef.current;
       const callerSnap   = callerInfoRef.current ?? "Unknown";
       const sidSnap      = callSidRef.current;
-      const cidSnap      = incomingCustomerIdRef.current;
+      const cidSnap      = activeCallCustomerIdRef.current;
 
       stopTimer();
       callDurationRef.current = 0;
       callSidRef.current = null;
-      incomingCustomerIdRef.current = null;
+      activeCallCustomerIdRef.current = null;
       activeCallRef.current = null;
 
       setCallState("idle");
@@ -175,7 +175,7 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
       stopTimer();
       callDurationRef.current = 0;
       callSidRef.current = null;
-      incomingCustomerIdRef.current = null;
+      activeCallCustomerIdRef.current = null;
       activeCallRef.current = null;
       setCallState("idle");
       updateCallerInfo(null);
@@ -254,10 +254,10 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
           const customerId = await screenPop(from);
           if (!destroyed) {
             if (customerId) {
-              incomingCustomerIdRef.current = customerId;
+              activeCallCustomerIdRef.current = customerId;
               router.push(`/customer/${customerId}`);
             } else {
-              incomingCustomerIdRef.current = null;
+              activeCallCustomerIdRef.current = null;
               updateCallerInfo("Unknown Caller");
             }
           }
@@ -293,8 +293,9 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
 
   // ─── Public API ─────────────────────────────────────────────────────────────
 
-  const makeCall = useCallback((phoneNumber: string, displayName?: string) => {
+  const makeCall = useCallback((phoneNumber: string, displayName?: string, customerId?: string | null) => {
     if (!deviceRef.current || callState !== "idle") return;
+    activeCallCustomerIdRef.current = customerId ?? null;
     setCallState("connecting");
     updateCallerInfo(displayName ?? phoneNumber);
 
@@ -323,7 +324,7 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
       activeCallRef.current.reject();
       setCallState("idle");
       updateCallerInfo(null);
-      incomingCustomerIdRef.current = null;
+      activeCallCustomerIdRef.current = null;
       activeCallRef.current = null;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps

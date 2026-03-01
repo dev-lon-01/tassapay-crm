@@ -32,6 +32,7 @@ import { apiFetch } from "@/src/lib/apiFetch";
 import { useQueue, type TaskStatus } from "@/src/context/QueueContext";
 import { useTwilioVoice } from "@/src/context/TwilioVoiceContext";
 import { useAuth } from "@/src/context/AuthContext";
+import { useDropdowns } from "@/src/context/DropdownsContext";
 
 interface ApiCustomer {
   customer_id: string;
@@ -104,17 +105,7 @@ function formatDate(iso: string | null): string {
   });
 }
 
-const FOCUS_OUTCOMES = [
-  "Select outcome…",
-  "No Answer",
-  "Left Voicemail",
-  "Left SMS",
-  "Promised to Upload ID",
-  "Guided Through App",
-  "Requested Call Back",
-  "Not Interested",
-  "Wrong Number",
-] as const;
+const FOCUS_PLACEHOLDER = "Select outcome…";
 
 function outcomeToStatus(outcome: string): TaskStatus {
   return outcome === "Not Interested" || outcome === "Wrong Number"
@@ -122,16 +113,7 @@ function outcomeToStatus(outcome: string): TaskStatus {
     : "follow-up";
 }
 
-const NOTE_OUTCOMES = [
-  "Select outcome…",
-  "General Note",
-  "Spoke with Customer",
-  "Left Voicemail",
-  "Left SMS",
-  "ID Verified",
-  "Escalated to Compliance",
-  "Follow-up Scheduled",
-];
+const NOTE_PLACEHOLDER = "Select outcome…";
 
 const LOGGER_TABS = [
   { key: "SMS" as const, label: "Send SMS", icon: MessageSquare },
@@ -171,6 +153,24 @@ export default function CustomerProfilePage({
   const { queuePosition, sortedQueue, activeTab: queueTab, setTaskStatus } = useQueue();
   const { makeCall, callState, callerInfo, callDuration, isMuted, toggleMute, hangUp } = useTwilioVoice();
   const { user } = useAuth();
+  const { focusOutcomes: dbFocusOutcomes, noteOutcomes: dbNoteOutcomes } = useDropdowns();
+
+  // Build runtime arrays with placeholder; fall back to hardcoded if DB not loaded yet
+  const FOCUS_OUTCOMES = [
+    FOCUS_PLACEHOLDER,
+    ...(dbFocusOutcomes.length > 0
+      ? dbFocusOutcomes
+      : ["No Answer","Left Voicemail","Left SMS","Promised to Upload ID",
+         "Guided Through App","Requested Call Back","Not Interested","Wrong Number"]),
+  ];
+  const NOTE_OUTCOMES = [
+    NOTE_PLACEHOLDER,
+    ...(dbNoteOutcomes.length > 0
+      ? dbNoteOutcomes
+      : ["General Note","Spoke with Customer","Left Voicemail","Left SMS",
+         "ID Verified","Escalated to Compliance","Follow-up Scheduled"]),
+  ];
+
   const focusPosition = queuePosition(params.id);
   const [customer, setCustomer] = useState<ApiCustomer | null>(null);
   const [timeline, setTimeline] = useState<ApiInteraction[]>([]);
@@ -183,10 +183,10 @@ export default function CustomerProfilePage({
   const [smsMessage, setSmsMessage] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
   const [emailBody, setEmailBody] = useState("");
-  const [noteOutcome, setNoteOutcome] = useState(NOTE_OUTCOMES[0]);
+  const [noteOutcome, setNoteOutcome] = useState(NOTE_PLACEHOLDER);
   const [noteText, setNoteText] = useState("");
   const [sending, setSending] = useState(false);
-  const [focusOutcome, setFocusOutcome] = useState<string>(FOCUS_OUTCOMES[0]);
+  const [focusOutcome, setFocusOutcome] = useState<string>(FOCUS_PLACEHOLDER);
   const [focusNote, setFocusNote] = useState("");
   const [focusSending, setFocusSending] = useState(false);
 
@@ -340,7 +340,7 @@ export default function CustomerProfilePage({
         if (res.ok) {
           const interaction: ApiInteraction = await res.json();
           setTimeline((prev) => [interaction, ...prev]);
-          setNoteOutcome(NOTE_OUTCOMES[0]);
+          setNoteOutcome(NOTE_PLACEHOLDER);
           setNoteText("");
           setToast({ message: "Note saved!", type: "success" });
         }
@@ -358,7 +358,7 @@ export default function CustomerProfilePage({
 
   // ─ Focus Mode save handler ─────────────────────────────────────────────────
   async function handleFocusSave(andNext: boolean) {
-    if (focusSending || focusOutcome === FOCUS_OUTCOMES[0]) return;
+    if (focusSending || focusOutcome === FOCUS_PLACEHOLDER) return;
     setFocusSending(true);
 
     // Compute next customer BEFORE status change to avoid stale queue lookup
@@ -384,7 +384,7 @@ export default function CustomerProfilePage({
         const interaction: ApiInteraction = await res.json();
         setTimeline((prev) => [interaction, ...prev]);
         setTaskStatus(params.id, outcomeToStatus(focusOutcome));
-        setFocusOutcome(FOCUS_OUTCOMES[0]);
+        setFocusOutcome(FOCUS_PLACEHOLDER);
         setFocusNote("");
         if (andNext) {
           if (nextCustomer) {
@@ -419,7 +419,7 @@ export default function CustomerProfilePage({
     (activeTab === "SMS" && (!smsTo.trim() || !smsMessage.trim())) ||
     (activeTab === "Email" && (!emailTo.trim() || !emailSubject.trim() || !emailBody.trim())) ||
     (activeTab === "Note" &&
-      (noteOutcome === NOTE_OUTCOMES[0] || !noteText.trim()));
+      (noteOutcome === NOTE_PLACEHOLDER || !noteText.trim()));
 
   if (loading) {
     return (
@@ -538,7 +538,7 @@ export default function CustomerProfilePage({
                   const phone = normalizePhone(customer.phone_number!, customer.country);
                   setSmsTo(phone);
                   handleTabChange("Call");
-                  makeCall(phone, customer.full_name ?? undefined);
+                  makeCall(phone, customer.full_name ?? undefined, params.id);
                 }}
                 title="Click to call"
                 className="group flex items-center gap-1 transition-colors hover:text-indigo-600"
@@ -859,7 +859,7 @@ export default function CustomerProfilePage({
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-400"
               >
                 {NOTE_OUTCOMES.map((o) => (
-                  <option key={o} value={o} disabled={o === NOTE_OUTCOMES[0]}>
+                  <option key={o} value={o} disabled={o === NOTE_PLACEHOLDER}>
                     {o}
                   </option>
                 ))}
@@ -930,7 +930,7 @@ export default function CustomerProfilePage({
               </div>
             ) : (
               <button
-                onClick={() => makeCall(smsTo.trim(), customer?.full_name ?? undefined)}
+                onClick={() => makeCall(smsTo.trim(), customer?.full_name ?? undefined, params.id)}
                 disabled={!smsTo.trim() || callState !== "idle"}
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold text-white transition-all hover:bg-emerald-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -986,7 +986,7 @@ export default function CustomerProfilePage({
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-emerald-400"
               >
                 {FOCUS_OUTCOMES.map((o) => (
-                  <option key={o} value={o} disabled={o === FOCUS_OUTCOMES[0]}>
+                  <option key={o} value={o} disabled={o === FOCUS_PLACEHOLDER}>
                     {o}
                   </option>
                 ))}
@@ -1009,7 +1009,7 @@ export default function CustomerProfilePage({
           <div className="mt-4 grid grid-cols-2 gap-2">
             <button
               onClick={() => handleFocusSave(false)}
-              disabled={focusSending || focusOutcome === FOCUS_OUTCOMES[0]}
+              disabled={focusSending || focusOutcome === FOCUS_PLACEHOLDER}
               className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
             >
               {focusSending && <Loader2 size={14} className="animate-spin" />}
@@ -1017,7 +1017,7 @@ export default function CustomerProfilePage({
             </button>
             <button
               onClick={() => handleFocusSave(true)}
-              disabled={focusSending || focusOutcome === FOCUS_OUTCOMES[0]}
+              disabled={focusSending || focusOutcome === FOCUS_PLACEHOLDER}
               className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
             >
               {focusSending ? (

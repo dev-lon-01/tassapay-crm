@@ -3,6 +3,7 @@ import "./globals.css";
 import { AuthProvider } from "@/src/context/AuthContext";
 import { QueueProvider } from "@/src/context/QueueContext";
 import { TwilioVoiceProvider } from "@/src/context/TwilioVoiceContext";
+import { DropdownsProvider } from "@/src/context/DropdownsContext";
 import { AppShell } from "@/src/components/AppShell";
 
 export const metadata: Metadata = {
@@ -21,7 +22,9 @@ export default function RootLayout({
         <AuthProvider>
           <QueueProvider>
             <TwilioVoiceProvider>
-              <AppShell>{children}</AppShell>
+              <DropdownsProvider>
+                <AppShell>{children}</AppShell>
+              </DropdownsProvider>
             </TwilioVoiceProvider>
           </QueueProvider>
         </AuthProvider>

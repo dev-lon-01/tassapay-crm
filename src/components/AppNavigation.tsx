@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BarChart2, Bell, Bot, CheckSquare, FileText,
-  LayoutDashboard, LogOut, Menu, RefreshCw, Activity,
+  LayoutDashboard, ListFilter, LogOut, Menu, RefreshCw, Activity,
   ShieldAlert, Users, UsersRound, X,
 } from "lucide-react";
 import { useAuth } from "@/src/context/AuthContext";
@@ -26,10 +26,11 @@ const navItems: NavItem[] = [
 ];
 
 const adminItems: NavItem[] = [
-  { label: "Analytics", href: "/analytics",      icon: BarChart2  },
-  { label: "Team",      href: "/team",            icon: UsersRound },
-  { label: "Sync",      href: "/sync",            icon: RefreshCw  },
-  { label: "Alerts",    href: "/settings/alerts", icon: Bell       },
+  { label: "Analytics", href: "/analytics",           icon: BarChart2   },
+  { label: "Team",      href: "/team",                 icon: UsersRound  },
+  { label: "Sync",      href: "/sync",                 icon: RefreshCw   },
+  { label: "Alerts",    href: "/settings/alerts",      icon: Bell        },
+  { label: "Dropdowns", href: "/settings/dropdowns",   icon: ListFilter  },
 ];
 
 // Rule of 4: only 3 primary links + "More" button on mobile
