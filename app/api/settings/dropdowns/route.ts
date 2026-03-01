@@ -19,16 +19,28 @@ export async function GET(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   const { searchParams } = new URL(req.url);
-  const category = searchParams.get("category");
+  const category        = searchParams.get("category");
+  // ?includeInactive=1 is Admin-only — lets the settings page see toggled-off items
+  const includeInactive = searchParams.get("includeInactive") === "1" && auth.role === "Admin";
 
-  const whereClause = category ? "AND category = ?" : "";
-  const params: (string | number)[] = category ? [category] : [];
+  const clauses: string[] = [];
+  const params: (string | number)[] = [];
+
+  if (!includeInactive) {
+    clauses.push("is_active = 1");
+  }
+  if (category) {
+    clauses.push("category = ?");
+    params.push(category);
+  }
+
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
 
   try {
     const [rows] = await pool.execute<RowDataPacket[]>(
       `SELECT id, category, label, sort_order, is_active
        FROM   system_dropdowns
-       WHERE  is_active = 1 ${whereClause}
+       ${where}
        ORDER  BY category, sort_order ASC`,
       params
     );

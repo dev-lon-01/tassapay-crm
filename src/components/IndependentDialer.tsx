@@ -64,8 +64,8 @@ export function IndependentDialer() {
       .then((data: unknown) => {
         const items = Array.isArray(data)
           ? data
-          : Array.isArray((data as { customers?: unknown[] }).customers)
-            ? (data as { customers: CustomerSuggestion[] }).customers
+          : Array.isArray((data as { data?: unknown[] }).data)
+            ? (data as { data: CustomerSuggestion[] }).data
             : [];
         setSuggestions(items as CustomerSuggestion[]);
       })
