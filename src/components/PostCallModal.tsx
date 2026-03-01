@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Phone, X, Loader2 } from "lucide-react";
 import { useTwilioVoice } from "@/src/context/TwilioVoiceContext";
 import { useDropdowns } from "@/src/context/DropdownsContext";
+import { useAuth } from "@/src/context/AuthContext";
 import { apiFetch } from "@/src/lib/apiFetch";
 
 function formatDuration(secs: number): string {
@@ -15,6 +16,7 @@ function formatDuration(secs: number): string {
 export function PostCallModal() {
   const { lastEndedCall, clearLastEndedCall } = useTwilioVoice();
   const { callOutcomes } = useDropdowns();
+  const { user } = useAuth();
 
   // Prepend placeholder; fall back to hardcoded list if DB hasn't loaded yet
   const OUTCOMES = [
@@ -44,7 +46,7 @@ export function PostCallModal() {
     try {
       const payload = {
         customerId: lastEndedCall.customerId,
-        agentId: null,
+        agentId: user?.id ?? null,
         type: "Call",
         outcome,
         note: note.trim() || null,
