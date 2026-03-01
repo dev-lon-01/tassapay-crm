@@ -109,6 +109,13 @@ export function PostCallModal() {
 
         {/* Body */}
         <div className="space-y-4 p-5">
+          {/* Inline warning when there is no customer context */}
+          {!lastEndedCall.customerId && (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+              No customer linked to this call — you can still log a note or use Skip.
+            </p>
+          )}
+
           {error && (
             <p className="rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-600">
               {error}
@@ -156,7 +163,7 @@ export function PostCallModal() {
           </button>
           <button
             onClick={handleSave}
-            disabled={saving || outcome === OUTCOMES[0] || !lastEndedCall?.customerId}
+            disabled={saving || outcome === OUTCOMES[0]}
             className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
           >
             {saving ? (
