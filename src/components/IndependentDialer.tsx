@@ -1,10 +1,51 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Phone, Search, X, Loader2 } from "lucide-react";
+import { Phone, Search, X, Loader2, Delete, Grid3x3 } from "lucide-react";
 import { apiFetch } from "@/src/lib/apiFetch";
 import { useTwilioVoice } from "@/src/context/TwilioVoiceContext";
 import { normalizePhone } from "@/src/lib/phoneUtils";
+
+// ─── Numpad ───────────────────────────────────────────────────────────────────
+
+const NUMPAD_KEYS = [
+  ["1", "2", "3"],
+  ["4", "5", "6"],
+  ["7", "8", "9"],
+  ["*", "0", "#"],
+] as const;
+
+interface NumpadProps {
+  onKey:       (char: string) => void;
+  onBackspace: () => void;
+}
+
+function Numpad({ onKey, onBackspace }: NumpadProps) {
+  return (
+    <div className="mt-2 rounded-xl border border-slate-100 bg-slate-50 p-2">
+      <div className="grid grid-cols-3 gap-1.5">
+        {NUMPAD_KEYS.flat().map((key) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onKey(key)}
+            className="flex h-10 items-center justify-center rounded-lg bg-white text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-indigo-50 hover:text-indigo-700 active:scale-95"
+          >
+            {key}
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={onBackspace}
+        className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-lg bg-white py-2 text-xs font-semibold text-slate-500 shadow-sm ring-1 ring-slate-200 transition hover:bg-red-50 hover:text-red-600 active:scale-95"
+      >
+        <Delete size={14} />
+        Backspace
+      </button>
+    </div>
+  );
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -47,8 +88,10 @@ export function IndependentDialer() {
   const [sugLoading, setSugLoading]     = useState(false);
   const [selected, setSelected]         = useState<CustomerSuggestion | null>(null);
 
-  const [open, setOpen] = useState(false);
-  const containerRef    = useRef<HTMLDivElement>(null);
+  const [open, setOpen]           = useState(false);
+  const [showNumpad, setShowNumpad] = useState(false);
+  const containerRef   = useRef<HTMLDivElement>(null);
+  const phoneInputRef  = useRef<HTMLInputElement>(null);
 
   const debouncedQuery = useDebounce(query, 300);
 
@@ -76,6 +119,17 @@ export function IndependentDialer() {
   useEffect(() => {
     if (mode === "search") search(debouncedQuery);
   }, [debouncedQuery, mode, search]);
+
+  // ── Numpad handlers ──────────────────────────────────────────────────────
+  function handleNumpadKey(char: string) {
+    setManualPhone((prev) => prev + char);
+    phoneInputRef.current?.focus();
+  }
+
+  function handleNumpadBackspace() {
+    setManualPhone((prev) => prev.slice(0, -1));
+    phoneInputRef.current?.focus();
+  }
 
   // ── Close dropdown on outside click ─────────────────────────────────────
   useEffect(() => {
@@ -115,6 +169,7 @@ export function IndependentDialer() {
     setManualPhone("");
     setSelected(null);
     setSuggestions([]);
+    setShowNumpad(false);
     setOpen(false);
   }
 
@@ -141,7 +196,7 @@ export function IndependentDialer() {
       <div className="flex items-center justify-between rounded-t-2xl border-b border-slate-100 px-4 py-3">
         <p className="text-sm font-semibold text-slate-700">Make a Call</p>
         <button
-          onClick={() => setOpen(false)}
+          onClick={() => { setOpen(false); setShowNumpad(false); }}
           className="text-slate-400 hover:text-slate-600"
         >
           <X size={15} />
@@ -161,7 +216,7 @@ export function IndependentDialer() {
           Search Customer
         </button>
         <button
-          onClick={() => { setMode("manual"); setQuery(""); setSelected(null); setSuggestions([]); }}
+          onClick={() => { setMode("manual"); setQuery(""); setSelected(null); setSuggestions([]); setShowNumpad(false); }}
           className={`flex-1 rounded-lg py-1.5 text-xs font-semibold transition ${
             mode === "manual"
               ? "bg-indigo-600 text-white"
@@ -228,17 +283,40 @@ export function IndependentDialer() {
             )}
           </div>
         ) : (
-          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-            <Phone size={14} className="shrink-0 text-slate-400" />
-            <input
-              autoFocus
-              type="tel"
-              placeholder="+447xxxxxxxxx"
-              value={manualPhone}
-              onChange={(e) => setManualPhone(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") handleCall(); }}
-              className="flex-1 bg-transparent text-sm outline-none placeholder-slate-400"
-            />
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <Phone size={14} className="shrink-0 text-slate-400" />
+              <input
+                ref={phoneInputRef}
+                autoFocus
+                type="tel"
+                placeholder="+447xxxxxxxxx"
+                value={manualPhone}
+                onChange={(e) => setManualPhone(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleCall(); }}
+                className="flex-1 bg-transparent text-sm outline-none placeholder-slate-400"
+              />
+              {manualPhone && (
+                <button type="button" onClick={() => setManualPhone("")} className="text-slate-300 hover:text-slate-500">
+                  <X size={13} />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowNumpad((v) => !v)}
+                title={showNumpad ? "Hide keypad" : "Show keypad"}
+                className={`ml-1 rounded-lg p-1 transition ${
+                  showNumpad
+                    ? "bg-indigo-100 text-indigo-600"
+                    : "text-slate-400 hover:bg-slate-200 hover:text-slate-600"
+                }`}
+              >
+                <Grid3x3 size={15} />
+              </button>
+            </div>
+            {showNumpad && (
+              <Numpad onKey={handleNumpadKey} onBackspace={handleNumpadBackspace} />
+            )}
           </div>
         )}
 
