@@ -10,8 +10,10 @@ import {
   Hash,
   X,
   AlertTriangle,
+  Settings,
 } from "lucide-react";
 import { useTwilioVoice } from "@/src/context/TwilioVoiceContext";
+import { useAudioDevices, type AudioDevice } from "@/src/hooks/useAudioDevices";
 
 // ─── Duration formatter ───────────────────────────────────────────────────────
 
@@ -49,6 +51,78 @@ function DtmfKeypad({ onDigit, onClose }: { onDigit: (d: string) => void; onClos
   );
 }
 
+// ─── Call Settings Popover ────────────────────────────────────────────────────
+
+interface CallSettingsPopoverProps {
+  audioOutputs:   AudioDevice[];
+  audioInputs:    AudioDevice[];
+  selectedOutput: string;
+  selectedInput:  string;
+  onOutputChange: (id: string) => void;
+  onInputChange:  (id: string) => void;
+  onClose:        () => void;
+}
+
+function CallSettingsPopover({
+  audioOutputs,
+  audioInputs,
+  selectedOutput,
+  selectedInput,
+  onOutputChange,
+  onInputChange,
+  onClose,
+}: CallSettingsPopoverProps) {
+  return (
+    <div className="w-72 rounded-2xl border border-slate-200 bg-white p-4 shadow-xl">
+      <div className="mb-3 flex items-center justify-between">
+        <span className="text-sm font-semibold text-slate-700">Call Settings</span>
+        <button onClick={onClose} className="text-slate-400 transition hover:text-slate-700">
+          <X size={14} />
+        </button>
+      </div>
+
+      {/* Audio Output */}
+      <div className="mb-3">
+        <label className="mb-1.5 block text-xs font-medium text-slate-500">
+          Audio Output (Speaker / Headset)
+        </label>
+        <select
+          value={selectedOutput}
+          onChange={(e) => onOutputChange(e.target.value)}
+          className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+        >
+          <option value="">System Default</option>
+          {audioOutputs.map((d) => (
+            <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Microphone */}
+      <div className="mb-4">
+        <label className="mb-1.5 block text-xs font-medium text-slate-500">
+          Microphone
+        </label>
+        <select
+          value={selectedInput}
+          onChange={(e) => onInputChange(e.target.value)}
+          className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+        >
+          <option value="">System Default</option>
+          {audioInputs.map((d) => (
+            <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Safari note */}
+      <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+        ⚠️ Safari does not support routing audio to specific devices. Use Chrome or Edge for the best experience.
+      </p>
+    </div>
+  );
+}
+
 // ─── CallWidget ──────────────────────────────────────────────────────────────
 
 export function CallWidget() {
@@ -64,9 +138,37 @@ export function CallWidget() {
     hangUp,
     toggleMute,
     sendDigits,
+    setOutputDevice,
+    setInputDevice,
   } = useTwilioVoice();
 
-  const [showKeypad, setShowKeypad] = useState(false);
+  const { audioOutputs, audioInputs, refresh } = useAudioDevices();
+
+  const [showKeypad,    setShowKeypad]    = useState(false);
+  const [showSettings,  setShowSettings]  = useState(false);
+  const [selectedOutput, setSelectedOutput] = useState<string>(
+    () => (typeof window !== "undefined" ? localStorage.getItem("tp_crm_output_device") ?? "" : "")
+  );
+  const [selectedInput,  setSelectedInput]  = useState<string>(
+    () => (typeof window !== "undefined" ? localStorage.getItem("tp_crm_input_device")  ?? "" : "")
+  );
+
+  function toggleSettings() {
+    refresh();
+    setShowSettings((v) => !v);
+  }
+
+  function handleOutputChange(deviceId: string) {
+    setSelectedOutput(deviceId);
+    localStorage.setItem("tp_crm_output_device", deviceId);
+    if (deviceId) setOutputDevice(deviceId);
+  }
+
+  function handleInputChange(deviceId: string) {
+    setSelectedInput(deviceId);
+    localStorage.setItem("tp_crm_input_device", deviceId);
+    if (deviceId) setInputDevice(deviceId);
+  }
 
   const hasMicError = deviceError === "MIC_BLOCKED";
   const visible = callState !== "idle" || hasMicError || (!hasMicError && !deviceReady === false);
@@ -81,19 +183,32 @@ export function CallWidget() {
 
       {/* ── Device ready/starting indicator (idle state, no error) ───────── */}
       {showReadyPill && (
-        <div
-          className={`mb-2 flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium shadow-md w-fit ml-auto ${
-            deviceReady
-              ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
-              : "bg-amber-100 text-amber-700 border border-amber-200"
-          }`}
-        >
-          <span
-            className={`inline-block h-2 w-2 rounded-full ${
-              deviceReady ? "bg-emerald-500" : "bg-amber-400 animate-pulse"
+        <div className="relative mb-2 flex items-center justify-end gap-2">
+          <button
+            onClick={toggleSettings}
+            title="Call Settings"
+            className={`flex h-7 w-7 items-center justify-center rounded-full shadow-md transition ${
+              showSettings
+                ? "bg-indigo-600 text-white"
+                : "bg-white text-slate-500 hover:bg-slate-100"
             }`}
-          />
-          {deviceReady ? "Ready" : "Starting…"}
+          >
+            <Settings size={14} />
+          </button>
+          <div
+            className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium shadow-md ${
+              deviceReady
+                ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                : "bg-amber-100 text-amber-700 border border-amber-200"
+            }`}
+          >
+            <span
+              className={`inline-block h-2 w-2 rounded-full ${
+                deviceReady ? "bg-emerald-500" : "bg-amber-400 animate-pulse"
+              }`}
+            />
+            {deviceReady ? "Ready" : "Starting…"}
+          </div>
         </div>
       )}
 
@@ -146,6 +261,16 @@ export function CallWidget() {
                 <span className="relative inline-flex h-3 w-3 rounded-full bg-white" />
               </span>
             )}
+            {/* Gear: Call Settings */}
+            <button
+              onClick={toggleSettings}
+              title="Call Settings"
+              className={`flex h-7 w-7 items-center justify-center rounded-full transition ${
+                showSettings ? "bg-white/30 text-white" : "bg-white/20 text-white hover:bg-white/30"
+              }`}
+            >
+              <Settings size={13} />
+            </button>
           </div>
 
           {/* Body — action buttons */}
@@ -226,6 +351,21 @@ export function CallWidget() {
               </>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ── Call Settings popover ─────────────────────────────────────────── */}
+      {showSettings && (
+        <div className="absolute bottom-full mb-2 right-0">
+          <CallSettingsPopover
+            audioOutputs={audioOutputs}
+            audioInputs={audioInputs}
+            selectedOutput={selectedOutput}
+            selectedInput={selectedInput}
+            onOutputChange={handleOutputChange}
+            onInputChange={handleInputChange}
+            onClose={() => setShowSettings(false)}
+          />
         </div>
       )}
     </div>

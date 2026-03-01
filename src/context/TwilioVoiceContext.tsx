@@ -39,6 +39,8 @@ interface TwilioVoiceContextValue {
   toggleMute: () => void;
   sendDigits: (digits: string) => void;
   clearLastEndedCall: () => void;
+  setOutputDevice: (deviceId: string) => void;
+  setInputDevice:  (deviceId: string) => void;
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -223,6 +225,18 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
       device.on("registered", () => {
         setDeviceReady(true);
         setDeviceError(null);
+        // Auto-apply saved audio device preferences after permissions are granted
+        if (typeof window !== "undefined") {
+          const savedOutput = localStorage.getItem("tp_crm_output_device");
+          const savedInput  = localStorage.getItem("tp_crm_input_device");
+          if (savedOutput) {
+            (device.audio as any)?.speakerDevices?.set(savedOutput);
+            (device.audio as any)?.ringtoneDevices?.set(savedOutput);
+          }
+          if (savedInput) {
+            (device.audio as any)?.setInputDevice?.(savedInput).catch(() => {});
+          }
+        }
         apiFetch("/api/voice/available", {
           method: "PATCH",
           body: JSON.stringify({ available: true }),
@@ -353,6 +367,17 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
     setLastEndedCall(null);
   }, []);
 
+  const setOutputDevice = useCallback((deviceId: string) => {
+    if (!deviceRef.current?.audio) return;
+    (deviceRef.current.audio as any).speakerDevices?.set(deviceId).catch?.(() => {});
+    (deviceRef.current.audio as any).ringtoneDevices?.set(deviceId).catch?.(() => {});
+  }, []);
+
+  const setInputDevice = useCallback((deviceId: string) => {
+    if (!deviceRef.current?.audio) return;
+    (deviceRef.current.audio as any).setInputDevice?.(deviceId).catch?.(() => {});
+  }, []);
+
   return (
     <TwilioVoiceContext.Provider
       value={{
@@ -370,6 +395,8 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
         toggleMute,
         sendDigits,
         clearLastEndedCall,
+        setOutputDevice,
+        setInputDevice,
       }}
     >
       {children}
