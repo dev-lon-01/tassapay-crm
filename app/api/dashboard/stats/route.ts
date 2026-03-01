@@ -4,7 +4,7 @@ import { requireAuth } from "@/src/lib/auth";
 import { buildTransferFence } from "@/src/lib/regionFence";
 import type { RowDataPacket } from "mysql2";
 
-const VALID_DAYS = new Set([3, 7, 14, 30, 60]);
+const VALID_DAYS = new Set([1, 2, 7, 14, 30, 60]);
 
 /**
  * GET /api/dashboard/stats?days=3

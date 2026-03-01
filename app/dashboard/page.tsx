@@ -58,11 +58,12 @@ interface StatsData {
 }
 
 const DAYS_OPTIONS = [
-  { label: "Last 3 Days",  value: 3  },
-  { label: "Last 7 Days",  value: 7  },
-  { label: "Last 14 Days", value: 14 },
-  { label: "Last 30 Days", value: 30 },
-  { label: "Last 60 Days", value: 60 },
+  { label: "Last 24 Hours", value: 1  },
+  { label: "Last 48 Hours", value: 2  },
+  { label: "Last 7 Days",   value: 7  },
+  { label: "Last 14 Days",  value: 14 },
+  { label: "Last 30 Days",  value: 30 },
+  { label: "Last 60 Days",  value: 60 },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -83,6 +84,9 @@ function fmtTime(iso: string | null): string {
 
 const fmtRevenue = (amount: number) =>
   new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 0 }).format(amount);
+
+const fmtPeriod = (d: number) =>
+  d === 1 ? "Last 24 hours" : d === 2 ? "Last 48 hours" : `Last ${d} days`;
 
 // ─── StatCard ─────────────────────────────────────────────────────────────────
 
@@ -135,7 +139,7 @@ export default function GlobalDashboard() {
   const [error, setError]             = useState<string | null>(null);
   const [loading, setLoading]         = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
-  const [days, setDays]               = useState<number>(3);
+  const [days, setDays]               = useState<number>(1);
   const [slaData, setSlaData]         = useState<SlaData | null>(null);
   const [slaLoading, setSlaLoading]   = useState(true);
   const [statsData,    setStatsData]    = useState<StatsData | null>(null);
@@ -274,12 +278,96 @@ export default function GlobalDashboard() {
         </div>
       </section>
 
+      {/* ── SLA Health ────────────────────────────────────────────── */}
+      <div>
+        <h2 className="mb-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">SLA Health</h2>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <StatCard
+            label="Somalia SLA Breaches"
+            value={loading ? "…" : (data?.health.somaliaBreached ?? "—")}
+            sub="Transfers pending > 15 minutes"
+            icon={AlertTriangle}
+            accent={somaliaAlert ? "rose" : "emerald"}
+          />
+          <StatCard
+            label="Standard SLA Breaches"
+            value={loading ? "…" : (data?.health.standardBreached ?? "—")}
+            sub="Transfers pending > 24 hours"
+            icon={CheckCircle2}
+            accent={(data?.health.standardBreached ?? 0) > 0 ? "amber" : "emerald"}
+          />
+        </div>
+      </div>
+
+      {/* ── Volume Widgets ────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+
+        {/* Widget 1: Volume by Currency */}
+        <div>
+          <h2 className="mb-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Volume by Currency</h2>
+          <article className="rounded-3xl border border-sky-200/90 bg-gradient-to-br from-sky-50 to-white p-5 shadow-md">
+            {statsLoading ? (
+              <p className="text-sm text-sky-400">Loading…</p>
+            ) : !statsData || statsData.byCurrency.length === 0 ? (
+              <p className="text-sm text-slate-400">No data for this period.</p>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {statsData.byCurrency.map((row) => (
+                  <li key={row.currency ?? "unknown"} className="flex items-center justify-between py-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-sky-100 text-sky-700">
+                        <span className="text-[10px] font-black">{(row.currency ?? "?").slice(0, 3)}</span>
+                      </div>
+                      <span className="text-xs font-bold uppercase tracking-wider text-sky-700">{row.currency ?? "Unknown"}</span>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-black text-slate-800">{fmtRevenue(row.total_revenue)}</p>
+                      <p className="text-xs text-slate-400">{row.total_transfers.toLocaleString("en-GB")} transfers</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </article>
+        </div>
+
+        {/* Widget 2: Volume by Destination */}
+        <div>
+          <h2 className="mb-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Volume by Destination</h2>
+          <article className="rounded-3xl border border-violet-200/90 bg-gradient-to-br from-violet-50 to-white p-5 shadow-md">
+            {statsLoading ? (
+              <p className="text-sm text-violet-400">Loading…</p>
+            ) : !statsData || statsData.byDestination.length === 0 ? (
+              <p className="text-sm text-slate-400">No data for this period.</p>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {statsData.byDestination.map((row) => (
+                  <li key={row.destination ?? "unknown"} className="flex items-center justify-between py-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-violet-100 text-violet-700">
+                        <Globe className="h-3.5 w-3.5" />
+                      </div>
+                      <span className="text-xs font-semibold text-violet-700">{row.destination ?? "Unknown"}</span>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-black text-slate-800">{fmtRevenue(row.total_revenue)}</p>
+                      <p className="text-xs text-slate-400">{row.total_transfers.toLocaleString("en-GB")} transfers</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </article>
+        </div>
+
+      </div>
+
       {/* ── SLA Bottleneck Monitor ──────────────────────────────────────── */}
       <div>
         <div className="mb-3 flex items-center gap-2">
           <h2 className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">SLA Bottleneck Monitor</h2>
           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
-            Last {days} day{days !== 1 ? "s" : ""}
+            {fmtPeriod(days)}
           </span>
         </div>
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
@@ -452,90 +540,6 @@ export default function GlobalDashboard() {
             accent={ingestStale ? "rose" : "violet"}
           />
         </div>
-      </div>
-
-      {/* ── SLA Health ───────────────────────────────────────────────────── */}
-      <div>
-        <h2 className="mb-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">SLA Health</h2>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <StatCard
-            label="Somalia SLA Breaches"
-            value={loading ? "…" : (data?.health.somaliaBreached ?? "—")}
-            sub="Transfers pending > 15 minutes"
-            icon={AlertTriangle}
-            accent={somaliaAlert ? "rose" : "emerald"}
-          />
-          <StatCard
-            label="Standard SLA Breaches"
-            value={loading ? "…" : (data?.health.standardBreached ?? "—")}
-            sub="Transfers pending > 24 hours"
-            icon={CheckCircle2}
-            accent={(data?.health.standardBreached ?? 0) > 0 ? "amber" : "emerald"}
-          />
-        </div>
-      </div>
-
-      {/* ── Volume Widgets ───────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-
-        {/* Widget 1: Volume by Currency */}
-        <div>
-          <h2 className="mb-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Volume by Currency</h2>
-          <article className="rounded-3xl border border-sky-200/90 bg-gradient-to-br from-sky-50 to-white p-5 shadow-md">
-            {statsLoading ? (
-              <p className="text-sm text-sky-400">Loading…</p>
-            ) : !statsData || statsData.byCurrency.length === 0 ? (
-              <p className="text-sm text-slate-400">No data for this period.</p>
-            ) : (
-              <ul className="divide-y divide-slate-100">
-                {statsData.byCurrency.map((row) => (
-                  <li key={row.currency ?? "unknown"} className="flex items-center justify-between py-2.5">
-                    <div className="flex items-center gap-2">
-                      <div className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-sky-100 text-sky-700">
-                        <span className="text-[10px] font-black">{(row.currency ?? "?").slice(0, 3)}</span>
-                      </div>
-                      <span className="text-xs font-bold uppercase tracking-wider text-sky-700">{row.currency ?? "Unknown"}</span>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-black text-slate-800">{fmtRevenue(row.total_revenue)}</p>
-                      <p className="text-xs text-slate-400">{row.total_transfers.toLocaleString("en-GB")} transfers</p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </article>
-        </div>
-
-        {/* Widget 2: Volume by Destination */}
-        <div>
-          <h2 className="mb-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Volume by Destination</h2>
-          <article className="rounded-3xl border border-violet-200/90 bg-gradient-to-br from-violet-50 to-white p-5 shadow-md">
-            {statsLoading ? (
-              <p className="text-sm text-violet-400">Loading…</p>
-            ) : !statsData || statsData.byDestination.length === 0 ? (
-              <p className="text-sm text-slate-400">No data for this period.</p>
-            ) : (
-              <ul className="divide-y divide-slate-100">
-                {statsData.byDestination.map((row) => (
-                  <li key={row.destination ?? "unknown"} className="flex items-center justify-between py-2.5">
-                    <div className="flex items-center gap-2">
-                      <div className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-violet-100 text-violet-700">
-                        <Globe className="h-3.5 w-3.5" />
-                      </div>
-                      <span className="text-xs font-semibold text-violet-700">{row.destination ?? "Unknown"}</span>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-black text-slate-800">{fmtRevenue(row.total_revenue)}</p>
-                      <p className="text-xs text-slate-400">{row.total_transfers.toLocaleString("en-GB")} transfers</p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </article>
-        </div>
-
       </div>
 
       {/* ── Error state ──────────────────────────────────────────────────── */}
