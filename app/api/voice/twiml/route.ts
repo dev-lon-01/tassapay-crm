@@ -5,6 +5,12 @@ import type { RowDataPacket } from "mysql2";
 
 const { VoiceResponse } = twilio.twiml;
 
+/** Extract E.164 number from a SIP URI like sip:+447903738370@domain;transport=UDP */
+function extractE164FromSip(uri: string): string | null {
+  const match = uri.match(/sip:(\+[0-9]+)@/);
+  return match ? match[1] : null;
+}
+
 export async function POST(req: NextRequest) {
   // Parse Twilio's form-encoded body
   const text = await req.text();
@@ -26,7 +32,8 @@ export async function POST(req: NextRequest) {
   }
 
   const twiml = new VoiceResponse();
-  const toParam = params["To"] ?? "";
+  const fromParam = params["From"] ?? "";
+  const toParam   = params["To"]   ?? "";
   const statusCallbackUrl = `${baseUrl}/api/voice/status-callback`;
   const dialOptions = {
     record: "record-from-answer" as const,
@@ -36,8 +43,17 @@ export async function POST(req: NextRequest) {
     method: "POST" as const,
   };
 
-  if (toParam.startsWith("+")) {
-    // Outbound call — dial the customer's number
+  // SIP outbound: agent dialling from Zoiper (From: sip:agent@domain, To: sip:+number@domain)
+  const sipOutboundNumber = fromParam.startsWith("sip:")
+    ? extractE164FromSip(toParam)
+    : null;
+
+  if (sipOutboundNumber) {
+    // Dial the extracted E.164 number with our Twilio number as caller ID
+    const dial = twiml.dial({ ...dialOptions, callerId: process.env.TWILIO_PHONE_NUMBER! });
+    dial.number({}, sipOutboundNumber);
+  } else if (toParam.startsWith("+")) {
+    // Browser WebRTC outbound — dial the customer's number
     const dial = twiml.dial({ ...dialOptions, callerId: process.env.TWILIO_PHONE_NUMBER! });
     dial.number({}, toParam);
   } else {
