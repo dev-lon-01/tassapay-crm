@@ -61,7 +61,10 @@ export async function POST(req: NextRequest) {
     ).catch((err: unknown) => {
       console.error("[status-callback] recording update failed", err);
     });
-    return new NextResponse(null, { status: 204 });
+    return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
+      status: 200,
+      headers: { "Content-Type": "text/xml" },
+    });
   }
 
   // ── Case 2 & 3: Inbound call completed (missed or answered) ─────────────────
@@ -123,7 +126,10 @@ export async function POST(req: NextRequest) {
         });
       }
     }
-    return new NextResponse(null, { status: 204 });
+    return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
+      status: 200,
+      headers: { "Content-Type": "text/xml" },
+    });
   }
 
   const isMissed   = !isFromAgent && direction === "inbound" &&
@@ -164,7 +170,10 @@ export async function POST(req: NextRequest) {
           console.error("[status-callback] answered call insert failed", err);
         });
       }
-      return new NextResponse(null, { status: 204 });
+      return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
+        status: 200,
+        headers: { "Content-Type": "text/xml" },
+      });
     }
 
     // Missed call — log interaction and offer voicemail
@@ -204,5 +213,8 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  return new NextResponse(null, { status: 204 });
+  return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
+    status: 200,
+    headers: { "Content-Type": "text/xml" },
+  });
 }
