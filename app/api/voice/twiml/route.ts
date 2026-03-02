@@ -43,16 +43,20 @@ export async function POST(req: NextRequest) {
     method: "POST" as const,
   };
 
-  // SIP outbound: agent dialling from Zoiper (From: sip:agent@domain, To: sip:+number@domain)
-  const sipOutboundNumber = fromParam.startsWith("sip:")
-    ? extractE164FromSip(toParam)
-    : null;
+  // Classify the caller
+  const isSipAgent     = fromParam.startsWith("sip:");     // Zoiper / SIP softphone
+  const isBrowserAgent = fromParam.startsWith("client:");  // React CRM WebRTC
+  const sipOutboundNumber = isSipAgent ? extractE164FromSip(toParam) : null;
 
-  if (sipOutboundNumber) {
-    // Dial the extracted E.164 number with our Twilio number as caller ID
+  if (isSipAgent && !sipOutboundNumber) {
+    // Zoiper dialled something that isn't a phone number (e.g. a username or blank) — reject gracefully
+    twiml.say({ voice: "alice" }, "Please enter a valid phone number and try again.");
+    twiml.hangup();
+  } else if (sipOutboundNumber) {
+    // SIP outbound: dial the extracted E.164 number with our Twilio number as caller ID
     const dial = twiml.dial({ ...dialOptions, callerId: process.env.TWILIO_PHONE_NUMBER! });
     dial.number({}, sipOutboundNumber);
-  } else if (toParam.startsWith("+")) {
+  } else if (isBrowserAgent && toParam.startsWith("+")) {
     // Browser WebRTC outbound — dial the customer's number
     const dial = twiml.dial({ ...dialOptions, callerId: process.env.TWILIO_PHONE_NUMBER! });
     dial.number({}, toParam);

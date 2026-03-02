@@ -5,6 +5,19 @@ import { pool } from "@/src/lib/db";
 const { VoiceResponse } = twilio.twiml;
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
 
+/** Extract E.164 from sip:+447...@domain or a plain +447... string */
+function extractE164FromSip(uri: string): string | null {
+  if (uri.startsWith("+")) return uri;
+  const match = uri.match(/sip:(\+[0-9]+)@/);
+  return match ? match[1] : null;
+}
+
+/** Extract the SIP username portion from sip:abdi@domain */
+function extractSipUsername(uri: string): string | null {
+  const match = uri.match(/^sip:([^@;]+)@/);
+  return match ? match[1] : null;
+}
+
 /**
  * POST /api/voice/status-callback
  *
@@ -55,10 +68,63 @@ export async function POST(req: NextRequest) {
   const dialStatus  = params["DialCallStatus"] ?? params["CallStatus"] ?? "";
   const direction   = params["Direction"]      ?? "";
   const fromNumber  = params["From"]           ?? params["Called"]    ?? "";
+  const toParam     = params["To"]             ?? "";
 
-  // Guard: outbound calls from the browser client have From = "client:<identity>"
-  // Their status-callbacks should never trigger voicemail or missed-call logging.
-  const isFromAgent = fromNumber.startsWith("client:");
+  // Guard: agent-initiated calls (browser WebRTC = "client:", Zoiper SIP = "sip:")
+  // must never trigger inbound voicemail / missed-call logic.
+  const isFromAgent = fromNumber.startsWith("client:") || fromNumber.startsWith("sip:");
+
+  // ── Zoiper (SIP) outbound call completed ──────────────────────────────────
+  // Twilio fires the action callback with From=sip:agent@domain, To=sip:+E164@domain.
+  if (fromNumber.startsWith("sip:") && (dialStatus === "completed" || dialStatus === "no-answer" || dialStatus === "busy" || dialStatus === "failed")) {
+    const dialedNumber = extractE164FromSip(toParam);
+    const sipUsername  = extractSipUsername(fromNumber);
+    const duration     = parseInt(params["DialCallDuration"] ?? params["CallDuration"] ?? "0", 10) || 0;
+
+    if (dialedNumber && sipUsername) {
+      // Look up agent by sip_username
+      const [agentRows] = await pool.execute<RowDataPacket[]>(
+        "SELECT id FROM users WHERE sip_username = ? LIMIT 1",
+        [sipUsername]
+      ).catch(() => [[]] as [RowDataPacket[]]);
+      const agentId = Array.isArray(agentRows) && agentRows.length > 0
+        ? (agentRows as RowDataPacket[])[0].id as number
+        : null;
+
+      // Look up customer by the dialed phone number
+      const normalizedDial = dialedNumber.replace(/\s/g, "");
+      const [custRows] = await pool.execute<RowDataPacket[]>(
+        `SELECT customer_id FROM customers
+         WHERE  REPLACE(phone_number, ' ', '') = ?
+            OR  REPLACE(phone_number, ' ', '') = ?
+         LIMIT 1`,
+        [normalizedDial, normalizedDial.replace(/^\+/, "")]
+      ).catch(() => [[]] as [RowDataPacket[]]);
+      const customerId = Array.isArray(custRows) && custRows.length > 0
+        ? (custRows as RowDataPacket[])[0].customer_id as string
+        : null;
+
+      if (customerId) {
+        const outcomeLabel = dialStatus === "completed" ? "Outbound Call" : `Outbound Call — ${dialStatus}`;
+        await pool.execute<ResultSetHeader>(
+          `INSERT INTO interactions
+             (customer_id, agent_id, type, outcome, note, twilio_call_sid, call_duration_seconds)
+           VALUES (?, ?, 'Call', ?, ?, ?, ?)`,
+          [
+            customerId,
+            agentId,
+            outcomeLabel,
+            `Outbound to ${dialedNumber} via Zoiper`,
+            callSid || null,
+            duration || null,
+          ]
+        ).catch((err: unknown) => {
+          console.error("[status-callback] Zoiper outbound insert failed", err);
+        });
+      }
+    }
+    return new NextResponse(null, { status: 204 });
+  }
 
   const isMissed   = !isFromAgent && direction === "inbound" &&
     (dialStatus === "no-answer" || dialStatus === "busy" || dialStatus === "failed");
@@ -82,15 +148,17 @@ export async function POST(req: NextRequest) {
 
     if (isAnswered) {
       // Answered call — log interaction now; RecordingUrl UPDATE will follow separately
+      const duration = parseInt(params["DialCallDuration"] ?? params["CallDuration"] ?? "0", 10) || null;
       if (customerId) {
         await pool.execute<ResultSetHeader>(
           `INSERT INTO interactions
-             (customer_id, agent_id, type, outcome, note, twilio_call_sid)
-           VALUES (?, NULL, 'Call', 'Inbound Call', ?, ?)`,
+             (customer_id, agent_id, type, outcome, note, twilio_call_sid, call_duration_seconds)
+           VALUES (?, NULL, 'Call', 'Inbound Call', ?, ?, ?)`,
           [
             customerId,
             `Inbound from ${fromNumber} — answered`,
             callSid || null,
+            duration,
           ]
         ).catch((err: unknown) => {
           console.error("[status-callback] answered call insert failed", err);
