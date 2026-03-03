@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS `customers` (
 
 CREATE TABLE IF NOT EXISTS `interactions` (
   `id`                     INT           NOT NULL AUTO_INCREMENT,
-  `customer_id`            VARCHAR(50)   NOT NULL,                  -- FK → customers.customer_id
+  `customer_id`            VARCHAR(50)   NULL,                       -- FK → customers.customer_id (nullable: unknown callers still logged)
   `agent_id`               INT           DEFAULT NULL,              -- FK → users.id
   `type`                   VARCHAR(50)   NOT NULL DEFAULT 'System', -- 'Call' | 'Email' | 'Note' | 'System'
   `outcome`                VARCHAR(255)  DEFAULT NULL,
@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS `interactions` (
   PRIMARY KEY (`id`),
   CONSTRAINT `fk_interactions_customer`
     FOREIGN KEY (`customer_id`) REFERENCES `customers` (`customer_id`)
-    ON DELETE CASCADE ON UPDATE CASCADE,
+    ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_interactions_agent`
     FOREIGN KEY (`agent_id`) REFERENCES `users` (`id`)
     ON DELETE SET NULL ON UPDATE CASCADE,

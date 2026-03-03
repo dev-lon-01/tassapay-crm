@@ -155,23 +155,25 @@ export async function POST(req: NextRequest) {
     }
 
     if (isAnswered) {
-      // Answered call — log interaction now; RecordingUrl UPDATE will follow separately
+      // Always log answered calls even when caller is unknown — so twilio_call_sid
+      // is always stored and the recording webhook can attach the MP3 ~2 min later.
       const duration = parseInt(params["DialCallDuration"] ?? params["CallDuration"] ?? "0", 10) || null;
-      if (customerId) {
-        await pool.execute<ResultSetHeader>(
-          `INSERT INTO interactions
-             (customer_id, agent_id, type, outcome, note, twilio_call_sid, call_duration_seconds)
-           VALUES (?, NULL, 'Call', 'Inbound Call', ?, ?, ?)`,
-          [
-            customerId,
-            `Inbound from ${fromNumber} — answered`,
-            callSid || null,
-            duration,
-          ]
-        ).catch((err: unknown) => {
-          console.error("[status-callback] answered call insert failed", err);
-        });
+      if (!customerId) {
+        console.warn(`[status-callback] answered call from unknown number ${fromNumber} (${callSid}) — logging without customer_id`);
       }
+      await pool.execute<ResultSetHeader>(
+        `INSERT INTO interactions
+           (customer_id, agent_id, type, outcome, note, twilio_call_sid, call_duration_seconds)
+         VALUES (?, NULL, 'Call', 'Inbound Call', ?, ?, ?)`,
+        [
+          customerId,
+          `Inbound from ${fromNumber} — answered`,
+          callSid || null,
+          duration,
+        ]
+      ).catch((err: unknown) => {
+        console.error("[status-callback] answered call insert failed", err);
+      });
       return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
         status: 200,
         headers: { "Content-Type": "text/xml" },
