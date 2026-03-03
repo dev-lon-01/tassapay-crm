@@ -88,7 +88,7 @@ async function checkAndFireSlaAlerts() {
     if (!transfer.send_currency) continue;
 
     const [routingRows] = await pool.execute(
-      `SELECT alert_emails, alert_phones, pushover_sound, pushover_priority
+      `SELECT alert_emails, alert_phones, pushover_sound, pushover_priority, pushover_enabled
        FROM   alert_routings
        WHERE  destination_country = 'Somalia'
          AND  source_currency = ?
@@ -146,7 +146,7 @@ async function checkAndFireSlaAlerts() {
     );
 
     // Collect for single summary Pushover at end of run
-    if (process.env.PUSHOVER_USER_KEY) {
+    if (process.env.PUSHOVER_USER_KEY && routing.pushover_enabled) {
       const routingKey = `${routing.pushover_sound}:${routing.pushover_priority}`;
       if (!pushoverSummaries.has(routingKey)) {
         pushoverSummaries.set(routingKey, { routing, transfers: [] });

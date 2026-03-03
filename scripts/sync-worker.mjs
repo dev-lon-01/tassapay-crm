@@ -18,6 +18,7 @@ import { createRequire } from "module";
 import { readFileSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
+import https from "https";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const require   = createRequire(import.meta.url);
@@ -379,7 +380,7 @@ async function checkAndFireSlaAlerts() {
 
   for (const [currency, group] of Object.entries(byCurrency)) {
     const [routingRows] = await pool.execute(
-      `SELECT alert_emails, alert_phones
+      `SELECT alert_emails, alert_phones, pushover_sound, pushover_priority, pushover_enabled
        FROM   alert_routings
        WHERE  destination_country = 'Somalia'
          AND  source_currency = ?
@@ -439,6 +440,32 @@ async function checkAndFireSlaAlerts() {
       );
     }
 
+    // ── Pushover summary ─────────────────────────────────────────────────
+    if (process.env.PUSHOVER_USER_KEY && routing.pushover_enabled) {
+      const pushoverMsg = count === 1
+        ? `🚨 SLA Breach: Transfer ${group[0].transaction_ref} is delayed. Amount: ${group[0].send_amount ?? "?"} ${currency}.`
+        : `🚨 SLA Breach: ${count} ${currency} transfers are overdue.\nLatest: ${group[0].transaction_ref} (+${count - 1} more).\nPlease check QA Dashboard.`;
+      const pushBody = {
+        token:    process.env.PUSHOVER_APP_TOKEN,
+        user:     process.env.PUSHOVER_USER_KEY,
+        message:  pushoverMsg,
+        title:    "TassaPay SLA Breach",
+        priority: routing.pushover_priority ?? 0,
+        sound:    routing.pushover_sound ?? "pushover",
+        ...(routing.pushover_priority === 2 ? { retry: 60, expire: 3600 } : {}),
+      };
+      promises.push(new Promise((resolve) => {
+        const payload = JSON.stringify(pushBody);
+        const req = https.request(
+          { hostname: "api.pushover.net", path: "/1/messages.json", method: "POST",
+            headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) } },
+          (res) => { res.resume(); res.on("end", resolve); }
+        );
+        req.on("error", (err) => { console.error(`[SLA] Pushover failed:`, err.message); resolve(); });
+        req.write(payload); req.end();
+      }).catch((err) => console.error(`[SLA] Pushover failed:`, err.message)));
+    }
+
     await Promise.all(promises);
 
     // Only stamp spam lock if at least one alert was dispatched
@@ -449,7 +476,8 @@ async function checkAndFireSlaAlerts() {
           [t.id]
         );
       }
-      console.log(`[SLA] Alerted: ${count} ${currency} transfer(s) — ${phones.length} SMS, ${emails.length} email(s)`);
+      const pushCount = (process.env.PUSHOVER_USER_KEY && routing.pushover_enabled) ? 1 : 0;
+      console.log(`[SLA] Alerted: ${count} ${currency} transfer(s) — ${phones.length} SMS, ${emails.length} email(s), ${pushCount} push`);
     } else {
       console.log(`[SLA] No alerts dispatched for ${currency} — spam lock not applied`);
     }
