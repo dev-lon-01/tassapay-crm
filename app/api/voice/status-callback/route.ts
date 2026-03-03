@@ -137,15 +137,17 @@ export async function POST(req: NextRequest) {
   const isAnswered = !isFromAgent && direction === "inbound" && dialStatus === "completed";
 
   if ((isMissed || isAnswered) && fromNumber) {
-    // Look up customer by phone number (shared by both branches)
+    // Look up customer by phone number — strip +, dashes, spaces; last-9 fallback
+    // to handle E.164 vs local format mismatches (same logic as GET /api/customers?phone=)
     let customerId: string | null = null;
-    const normalized = fromNumber.replace(/\s/g, "");
+    const normalized = fromNumber.replace(/[\s\-+]/g, "");
+    const last9      = normalized.slice(-9);
     const [rows] = await pool.execute<RowDataPacket[]>(
       `SELECT customer_id FROM customers
-       WHERE  REPLACE(phone_number, ' ', '') = ?
-          OR  REPLACE(phone_number, ' ', '') = ?
+       WHERE  REPLACE(REPLACE(REPLACE(phone_number,' ',''),'-',''),'+','') = ?
+          OR  RIGHT(REPLACE(REPLACE(REPLACE(phone_number,' ',''),'-',''),'+',''), 9) = ?
        LIMIT 1`,
-      [normalized, normalized.replace(/^\+/, "")]
+      [normalized, last9]
     ).catch(() => [[]]);
 
     if (Array.isArray(rows) && rows.length > 0) {
