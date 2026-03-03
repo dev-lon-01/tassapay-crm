@@ -284,3 +284,16 @@ CREATE TABLE IF NOT EXISTS `alert_routings` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_alert_routing` (`destination_country`, `source_currency`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ─── system_dropdowns (configurable outcome lists) ────────────────────────────
+
+CREATE TABLE IF NOT EXISTS `system_dropdowns` (
+  `id`          INT           NOT NULL AUTO_INCREMENT,
+  `category`    VARCHAR(50)   NOT NULL,
+  `label`       VARCHAR(100)  NOT NULL,
+  `sort_order`  INT           NOT NULL DEFAULT 0,
+  `is_active`   TINYINT(1)    NOT NULL DEFAULT 1,
+  `created_at`  DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_dropdown` (`category`, `label`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
