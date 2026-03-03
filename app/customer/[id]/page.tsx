@@ -26,6 +26,7 @@ import {
   Zap,
   Mic,
   MicOff,
+  PlayCircle,
 } from "lucide-react";
 import { normalizePhone } from "@/src/lib/phoneUtils";
 import { apiFetch } from "@/src/lib/apiFetch";
@@ -55,6 +56,9 @@ interface ApiInteraction {
   note: string | null;
   created_at: string;
   agent_name: string | null;
+  call_duration_seconds: number | null;
+  recording_url: string | null;
+  twilio_call_sid: string | null;
 }
 
 interface ApiTransfer {
@@ -94,6 +98,13 @@ function formatRelative(iso: string): string {
     month: "short",
     year: "numeric",
   });
+}
+
+function formatDuration(seconds: number | null): string {
+  if (!seconds) return "";
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}m ${s}s`;
 }
 
 function formatDate(iso: string | null): string {
@@ -1067,6 +1078,22 @@ export default function CustomerProfilePage({
                     <p className="mt-0.5 whitespace-pre-wrap text-sm leading-relaxed text-slate-500">
                       {item.note ?? ""}
                     </p>
+                    {item.type === "Call" && item.call_duration_seconds != null && (
+                      <p className="mt-1 text-xs text-slate-400">
+                        Duration: {formatDuration(item.call_duration_seconds)}
+                      </p>
+                    )}
+                    {item.recording_url && (
+                      <a
+                        href={item.recording_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                      >
+                        <PlayCircle size={13} />
+                        Play Recording
+                      </a>
+                    )}
                     <p className="mt-1 text-xs text-slate-400">
                       {item.agent_name ?? "System"}
                     </p>
