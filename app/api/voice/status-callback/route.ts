@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
     return new NextResponse("Forbidden", { status: 403 });
   }
 
-  const callSid      = params["CallSid"]      ?? params["ParentCallSid"] ?? "";
+  const callSid      = params["CallSid"] ?? params["RecordingCallSid"] ?? params["ParentCallSid"] ?? "";
   const recordingUrl = params["RecordingUrl"] ?? "";
 
   // ── Case 1: Recording ready ─────────────────────────────────────────────────

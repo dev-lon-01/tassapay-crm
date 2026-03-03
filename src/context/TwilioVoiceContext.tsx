@@ -130,13 +130,20 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
   function attachCallListeners(call: Call) {
     activeCallRef.current = call;
 
+    // Early capture — for outbound calls the SID is available on the Call
+    // object immediately, before the `accept` event fires.
+    const earlyParams = (call as unknown as { parameters?: Record<string, string> }).parameters;
+    if (earlyParams?.CallSid) {
+      callSidRef.current = earlyParams.CallSid;
+    }
+
     call.on("accept", (acceptedCall: Call) => {
       stopRing();
-      // Capture CallSid from the accepted call parameters
+      // Capture CallSid — only overwrite if truthy to avoid clobbering early capture
       const sid =
         (acceptedCall as unknown as { parameters?: Record<string, string> })
           .parameters?.CallSid ?? null;
-      callSidRef.current = sid;
+      if (sid) callSidRef.current = sid;
       setCallState("active");
       setIsMuted(false);
       startTimer();
@@ -166,6 +173,7 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
       setCallDuration(0);
 
       // Surface the ended call so PostCallModal can log it
+      console.log("[TwilioVoice] disconnect →", { sidSnap, phoneSnap, directionSnap, durationSnap });
       setLastEndedCall({
         callSid: sidSnap,
         durationSeconds: durationSnap,
