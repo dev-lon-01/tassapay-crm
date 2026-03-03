@@ -22,6 +22,8 @@ export interface EndedCall {
   durationSeconds: number;
   callerInfo: string;
   customerId: string | null;
+  phone: string | null;
+  direction: "inbound" | "outbound";
 }
 
 interface TwilioVoiceContextValue {
@@ -60,6 +62,8 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
   const callSidRef               = useRef<string | null>(null);
   const callerInfoRef            = useRef<string | null>(null);
   const activeCallCustomerIdRef  = useRef<string | null>(null);
+  const activeCallPhoneRef       = useRef<string | null>(null);
+  const activeCallDirectionRef   = useRef<"inbound" | "outbound">("inbound");
   const ringAudioRef             = useRef<HTMLAudioElement | null>(null);
 
   const [callState, setCallState]         = useState<CallState>("idle");
@@ -140,16 +144,20 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
 
     call.on("disconnect", () => {
       stopRing();
-      // Snapshot before zeroing — callDurationRef stays accurate in the closure
-      const durationSnap = callDurationRef.current;
-      const callerSnap   = callerInfoRef.current ?? "Unknown";
-      const sidSnap      = callSidRef.current;
-      const cidSnap      = activeCallCustomerIdRef.current;
+      // Snapshot before zeroing — refs stay accurate in the closure
+      const durationSnap  = callDurationRef.current;
+      const callerSnap    = callerInfoRef.current ?? "Unknown";
+      const sidSnap       = callSidRef.current;
+      const cidSnap       = activeCallCustomerIdRef.current;
+      const phoneSnap     = activeCallPhoneRef.current;
+      const directionSnap = activeCallDirectionRef.current;
 
       stopTimer();
       callDurationRef.current = 0;
       callSidRef.current = null;
       activeCallCustomerIdRef.current = null;
+      activeCallPhoneRef.current = null;
+      activeCallDirectionRef.current = "inbound";
       activeCallRef.current = null;
 
       setCallState("idle");
@@ -163,6 +171,8 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
         durationSeconds: durationSnap,
         callerInfo: callerSnap,
         customerId: cidSnap,
+        phone: phoneSnap,
+        direction: directionSnap,
       });
 
       // Mark agent available again
@@ -178,6 +188,8 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
       callDurationRef.current = 0;
       callSidRef.current = null;
       activeCallCustomerIdRef.current = null;
+      activeCallPhoneRef.current = null;
+      activeCallDirectionRef.current = "inbound";
       activeCallRef.current = null;
       setCallState("idle");
       updateCallerInfo(null);
@@ -260,6 +272,8 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
         const from = call.parameters?.From ?? "";
         setCallState("incoming");
         updateCallerInfo(from || "Unknown Caller");
+        activeCallPhoneRef.current = from || null;
+        activeCallDirectionRef.current = "inbound";
         startRing();
         attachCallListeners(call);
 
@@ -310,6 +324,8 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
   const makeCall = useCallback((phoneNumber: string, displayName?: string, customerId?: string | null) => {
     if (!deviceRef.current || callState !== "idle") return;
     activeCallCustomerIdRef.current = customerId ?? null;
+    activeCallPhoneRef.current = phoneNumber;
+    activeCallDirectionRef.current = "outbound";
     setCallState("connecting");
     updateCallerInfo(displayName ?? phoneNumber);
 

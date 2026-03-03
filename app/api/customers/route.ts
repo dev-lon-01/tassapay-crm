@@ -34,19 +34,24 @@ export async function GET(req: NextRequest) {
 
     // ── Phone lookup for screen pop (returns a single customer or 404) ──────
     if (phone) {
-      const normalized = phone.replace(/\s/g, "");
-      const phoneFence = buildCountryFence(auth.allowed_regions ?? ["UK", "EU"], auth.role === "Admin");
+      // Strip spaces, dashes, and + from input; also try last-9-digit fallback
+      // to handle E.164 (+447…) vs local (07…) format mismatches
+      const normalized  = phone.replace(/[\s\-+]/g, "");
+      const last9       = normalized.slice(-9);
+      const phoneFence  = buildCountryFence(auth.allowed_regions ?? ["UK", "EU"], auth.role === "Admin");
       const phoneFenceClause = phoneFence ? `AND ${phoneFence.sql}` : "";
       const [rows] = await pool.execute<RowDataPacket[]>(
         `SELECT customer_id, full_name, email, phone_number, country,
                 registration_date, kyc_completion_date, risk_status,
                 (SELECT COUNT(*) FROM transfers t WHERE t.customer_id = customers.customer_id) AS total_transfers
          FROM   customers
-         WHERE  (REPLACE(phone_number, ' ', '') = ?
-            OR  REPLACE(phone_number, ' ', '') = ?)
+         WHERE  (
+                  REPLACE(REPLACE(REPLACE(phone_number,' ',''),'-',''),'+','') = ?
+               OR RIGHT(REPLACE(REPLACE(REPLACE(phone_number,' ',''),'-',''),'+',''), 9) = ?
+               )
            ${phoneFenceClause}
          LIMIT 1`,
-        [normalized, normalized.replace(/^\+/, ""), ...(phoneFence?.params ?? [])]
+        [normalized, last9, ...(phoneFence?.params ?? [])]
       );
       if (!Array.isArray(rows) || rows.length === 0) {
         return NextResponse.json({ error: "Not found" }, { status: 404 });
