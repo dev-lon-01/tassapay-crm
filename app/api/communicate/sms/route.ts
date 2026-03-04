@@ -77,8 +77,8 @@ export async function POST(req: NextRequest) {
 
     // ── 3. Log interaction ───────────────────────────────────────────────────
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO interactions (customer_id, agent_id, type, outcome, note)
-       VALUES (?, ?, 'SMS', 'Delivered', ?)`,
+      `INSERT INTO interactions (customer_id, agent_id, type, direction, outcome, note)
+       VALUES (?, ?, 'SMS', 'outbound', 'Delivered', ?)`,
       [customerId, agentId, message.trim()]
     );
 

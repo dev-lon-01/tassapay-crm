@@ -54,6 +54,8 @@ interface ApiInteraction {
   type: "Call" | "Email" | "Note" | "System" | "SMS";
   outcome: string | null;
   note: string | null;
+  direction: string | null;
+  metadata: string | null;
   created_at: string;
   agent_name: string | null;
   call_duration_seconds: number | null;
@@ -75,6 +77,7 @@ interface ApiTransfer {
   hold_reason: string | null;
   payment_method: string | null;
   delivery_method: string | null;
+  data_field_id: string | null;
 }
 
 interface ApiTemplate {
@@ -621,6 +624,7 @@ export default function CustomerProfilePage({
                   <tr className="border-b border-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
                     <th className="pb-2 pr-3">Date</th>
                     <th className="pb-2 pr-3">Ref</th>
+                    <th className="pb-2 pr-3">Tayo Ref</th>
                     <th className="pb-2 pr-3">Send</th>
                     <th className="pb-2 pr-3">Receive</th>
                     <th className="pb-2 pr-3">Beneficiary</th>
@@ -643,6 +647,11 @@ export default function CustomerProfilePage({
                       <td className="py-2.5 pr-3">
                         <span className="font-mono text-xs text-slate-600">
                           {t.transaction_ref}
+                        </span>
+                      </td>
+                      <td className="py-2.5 pr-3">
+                        <span className="font-mono text-xs text-slate-500">
+                          {t.data_field_id ?? "—"}
                         </span>
                       </td>
                       <td className="whitespace-nowrap py-2.5 pr-3">
@@ -1075,6 +1084,11 @@ export default function CustomerProfilePage({
                         {formatRelative(item.created_at)}
                       </span>
                     </div>
+                    {item.type === "SMS" && item.direction === "inbound" && (
+                      <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-cyan-50 px-2 py-0.5 text-[11px] font-semibold text-cyan-700">
+                        ← Inbound SMS
+                      </span>
+                    )}
                     <p className="mt-0.5 whitespace-pre-wrap text-sm leading-relaxed text-slate-500">
                       {item.note ?? ""}
                     </p>

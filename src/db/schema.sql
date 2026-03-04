@@ -66,6 +66,8 @@ CREATE TABLE IF NOT EXISTS `interactions` (
   `type`                   VARCHAR(50)   NOT NULL DEFAULT 'System', -- 'Call' | 'Email' | 'Note' | 'System'
   `outcome`                VARCHAR(255)  DEFAULT NULL,
   `note`                   TEXT          DEFAULT NULL,
+  `direction`              VARCHAR(20)   DEFAULT NULL,              -- 'inbound' | 'outbound'
+  `metadata`               JSON          DEFAULT NULL,              -- channel-specific data e.g. {"from":"+447..."}
   `twilio_call_sid`        VARCHAR(64)   DEFAULT NULL,              -- Twilio CallSid (CA...)
   `call_duration_seconds`  INT UNSIGNED  DEFAULT NULL,              -- call length in seconds
   `recording_url`          VARCHAR(500)  DEFAULT NULL,              -- Twilio recording URL
@@ -121,7 +123,10 @@ INSERT IGNORE INTO `templates` (`id`, `name`, `channel`, `subject`, `body`) VALU
 (4, 'KYC Completion Email',      'Email', 'Action Required: Complete Your TassaPay Verification',
  'Dear {{fullName}},\n\nYour KYC verification is still pending on your TassaPay account.\n\nCompleting it takes just a few minutes and unlocks full transfer capabilities.\n\nPlease log in at tassapay.co.uk and navigate to your profile to finish the process.\n\nFor help, contact support@tassapay.co.uk.\n\nBest regards,\nThe TassaPay Team'),
 (5, 'Welcome Email',             'Email', 'Welcome to TassaPay, {{fullName}}!',
- 'Dear {{fullName}},\n\nWelcome to TassaPay! We are delighted to have you on board.\n\nWith TassaPay, you can send money to {{country}} and over 50 other countries at competitive rates.\n\nTo get started:\n1. Complete your KYC verification\n2. Add a payment method\n3. Send your first transfer\n\nLog in at tassapay.co.uk to begin.\n\nBest regards,\nThe TassaPay Team');
+ 'Dear {{fullName}},\n\nWelcome to TassaPay! We are delighted to have you on board.\n\nWith TassaPay, you can send money to {{country}} and over 50 other countries at competitive rates.\n\nTo get started:\n1. Complete your KYC verification\n2. Add a payment method\n3. Send your first transfer\n\nLog in at tassapay.co.uk to begin.\n\nBest regards,\nThe TassaPay Team'),
+(6, 'Beneficiary Information Update Required', 'Email',
+ 'Action Required: Update to your TassaPay Transfer [Transfer ID]',
+ 'Dear {{fullName}},\n\nWe are reaching out regarding your recent transfer ([Transfer ID] for [Amount]). Unfortunately, we have encountered an issue with the beneficiary details provided, and the receiving bank/mobile provider has temporarily halted the transaction.\n\nTo ensure your funds are delivered quickly, please reply to this email or call our support team to confirm the correct recipient Name, Account Number, and Phone Number.\n\nThank you,\nThe TassaPay Team');
 
 CREATE TABLE IF NOT EXISTS `customers` (
   `customer_id`             VARCHAR(20)   NOT NULL,
@@ -211,6 +216,7 @@ CREATE TABLE IF NOT EXISTS `transfers` (
   `data_field_id`       VARCHAR(50)    DEFAULT NULL,             -- rmtNo from DataField / TayoTransfer provider
   `data_field_status`   VARCHAR(50)    DEFAULT NULL,             -- Status from TayoTransfer (e.g. 'Ready', 'Cancel')
   `payment_status`      VARCHAR(50)    DEFAULT NULL,             -- paymentReceived_Name from backoffice (e.g. 'Received')
+  `tayo_date_paid`      DATETIME       DEFAULT NULL,             -- Datepaid from Tayo API (funds released timestamp)
   `sla_alert_sent_at`   DATETIME       DEFAULT NULL,             -- set when SLA breach alert is fired (spam lock)
   `synced_at`           DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 

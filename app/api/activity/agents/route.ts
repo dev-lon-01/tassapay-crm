@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
   const fence = buildCountryFence(effectiveRegions, isAdmin);
 
   try {
-    const fenceClause = fence ? `AND c.country IN (${fence.params.map(() => "?").join(",")})` : "";
+    const fenceClause = fence ? `AND (c.country IN (${fence.params.map(() => "?").join(",")}) OR i.customer_id IS NULL)` : "";
     const fenceParams = fence?.params ?? [];
 
     const typeClause  = typeParam ? "AND i.type = ?" : "";
@@ -65,14 +65,17 @@ export async function GET(req: NextRequest) {
          i.note,
          i.created_at,
          i.call_duration_seconds,
+         i.direction,
+         i.metadata,
+         i.customer_id,
          c.phone_number,
          u.name      AS agent_name,
          c.full_name AS customer_name,
          c.country   AS customer_country
        FROM   interactions i
-       JOIN   customers c ON c.customer_id = i.customer_id
+       LEFT JOIN customers c ON c.customer_id = i.customer_id
        LEFT JOIN users u  ON u.id = i.agent_id
-       WHERE  i.agent_id IS NOT NULL
+       WHERE  (i.agent_id IS NOT NULL OR (i.type = 'SMS' AND i.direction = 'inbound'))
          ${fenceClause}
          ${typeClause}
        ORDER BY i.created_at DESC

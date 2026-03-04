@@ -40,6 +40,7 @@ export interface RawTransfer {
   Ptype: string;
   Type_Name: string;
   paymentReceived_Name: string;
+  Datepaid?: string;
   [key: string]: unknown;
 }
 
@@ -58,6 +59,7 @@ export interface MappedTransfer {
   payment_method: string | null;
   delivery_method: string | null;
   payment_status: string | null;
+  tayo_date_paid: string | null;
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -125,6 +127,7 @@ export function mapTransferRow(t: RawTransfer): MappedTransfer {
     payment_method:      str(t.Ptype),
     delivery_method:     str(t.Type_Name),
     payment_status:      str(t.paymentReceived_Name),
+    tayo_date_paid:      parseTransferDate(t.Datepaid),
   };
 }
 
@@ -138,8 +141,8 @@ INSERT INTO transfers
    destination_country, beneficiary_name,
    status, hold_reason,
    payment_method, delivery_method,
-   payment_status)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+   payment_status, tayo_date_paid)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON DUPLICATE KEY UPDATE
   customer_id         = VALUES(customer_id),
   created_at          = VALUES(created_at),
@@ -154,6 +157,7 @@ ON DUPLICATE KEY UPDATE
   payment_method      = VALUES(payment_method),
   delivery_method     = VALUES(delivery_method),
   payment_status      = VALUES(payment_status),
+  tayo_date_paid      = VALUES(tayo_date_paid),
   synced_at           = CURRENT_TIMESTAMP
 `;
 
@@ -192,7 +196,7 @@ export async function upsertTransfers(
           row.destination_country, row.beneficiary_name,
           row.status, row.hold_reason,
           row.payment_method, row.delivery_method,
-          row.payment_status,
+          row.payment_status, row.tayo_date_paid,
         ];
         const [res] = await db.execute(UPSERT_SQL, params);
         if (res.affectedRows === 1) inserted++;

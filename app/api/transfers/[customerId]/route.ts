@@ -54,7 +54,8 @@ export async function GET(
               receive_amount, receive_currency,
               destination_country, beneficiary_name,
               status, hold_reason,
-              payment_method, delivery_method
+              payment_method, delivery_method,
+              data_field_id
        FROM   transfers
        WHERE  customer_id = ?
        ORDER BY created_at DESC

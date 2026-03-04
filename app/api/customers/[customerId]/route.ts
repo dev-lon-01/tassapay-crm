@@ -43,6 +43,7 @@ export async function GET(
     // 2. Interaction timeline (joined with agent name)
     const [timeline] = await pool.execute<RowDataPacket[]>(
       `SELECT i.id, i.customer_id, i.agent_id, i.type, i.outcome, i.note,
+              i.direction, i.metadata,
               i.twilio_call_sid, i.call_duration_seconds, i.recording_url,
               i.created_at, u.name AS agent_name
        FROM   interactions i

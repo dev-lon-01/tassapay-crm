@@ -19,6 +19,9 @@ interface ActivityEntry {
   agent_name:            string | null;
   customer_name:         string | null;
   customer_country:      string | null;
+  direction:             string | null;
+  metadata:              string | null;
+  customer_id:           string | null;
 }
 
 type TypeFilter = "all" | "Call" | "SMS" | "Note";
@@ -208,16 +211,23 @@ export default function ActivityPage() {
                   <div className="flex flex-col gap-0.5">
                     <p className="text-sm text-slate-800">
                       <span className="font-semibold text-slate-900">
-                        {entry.agent_name ?? "Unknown agent"}
+                        {entry.agent_name ?? (entry.direction === "inbound" ? "Customer" : "Unknown agent")}
                       </span>{" "}
-                      logged a{" "}
+                      {entry.direction === "inbound" && entry.type === "SMS" ? "sent an inbound " : "logged a "}
                       <span className="font-semibold text-indigo-600">{entry.type}</span>
-                      {entry.customer_name && (
+                      {entry.customer_name ? (
                         <>
                           {" "}with{" "}
                           <span className="font-semibold text-slate-900">{entry.customer_name}</span>
                         </>
-                      )}
+                      ) : entry.direction === "inbound" && entry.customer_id === null ? (
+                        <>
+                          {" "}from{" "}
+                          <span className="font-semibold text-slate-500">
+                            Unknown Number: {(() => { try { return (JSON.parse(entry.metadata ?? "{}") as { from?: string }).from ?? "—"; } catch { return "—"; } })()}
+                          </span>
+                        </>
+                      ) : null}
                       {entry.customer_country && (
                         <span className="ml-1 text-xs text-slate-400">
                           ({entry.customer_country})
