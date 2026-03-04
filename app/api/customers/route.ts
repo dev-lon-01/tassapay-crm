@@ -26,8 +26,9 @@ export async function GET(req: NextRequest) {
     const country        = searchParams.get("country");
     const kycStatus      = searchParams.get("kycStatus");
     const transferStatus = searchParams.get("transferStatus");
-    const search         = searchParams.get("search");
-    const phone          = searchParams.get("phone");
+    const search           = searchParams.get("search");
+    const referenceSearch  = searchParams.get("reference_search");
+    const phone            = searchParams.get("phone");
     const page           = Math.max(1, Number(searchParams.get("page") ?? 1));
     const limit          = Math.min(200, Math.max(1, Number(searchParams.get("limit") ?? 50)));
     const offset         = (page - 1) * limit;
@@ -79,6 +80,12 @@ export async function GET(req: NextRequest) {
     if (search) {
       conditions.push("(full_name LIKE ? OR customer_id LIKE ?)");
       params.push(`%${search}%`, `%${search}%`);
+    }
+    if (referenceSearch) {
+      conditions.push(
+        "EXISTS (SELECT 1 FROM transfers t WHERE t.customer_id = customers.customer_id AND (t.transaction_ref LIKE ? OR t.data_field_id LIKE ?))"
+      );
+      params.push(`%${referenceSearch}%`, `%${referenceSearch}%`);
     }
 
     // ── Region fence (non-Admin only) ─────────────────────────────────────────

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -7,20 +7,26 @@ import { apiFetch } from "@/src/lib/apiFetch";
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
-interface ApiCustomer {
+interface ApiTransfer {
+  id: number;
+  transaction_ref: string | null;
+  data_field_id: string | null;
+  created_at: string;
+  send_amount: number | null;
+  send_currency: string | null;
+  receive_amount: number | null;
+  receive_currency: string | null;
+  destination_country: string | null;
+  beneficiary_name: string | null;
+  status: string | null;
+  hold_reason: string | null;
   customer_id: string;
   full_name: string | null;
-  email: string | null;
-  phone_number: string | null;
-  country: string | null;
-  registration_date: string | null;
-  kyc_completion_date: string | null;
-  risk_status: string | null;
-  total_transfers: number;
+  customer_country: string | null;
 }
 
 interface PaginatedResponse {
-  data: ApiCustomer[];
+  data: ApiTransfer[];
   total: number;
   page: number;
   limit: number;
@@ -29,13 +35,11 @@ interface PaginatedResponse {
 
 interface Filters {
   search: string;
+  status: string;
   country: string;
-  kyc: string;
-  transfer: string;
-  refSearch: string;
 }
 
-// ─── lookup maps ──────────────────────────────────────────────────────────────
+// ─── country flags ────────────────────────────────────────────────────────────
 
 const COUNTRY_FLAGS: Record<string, string> = {
   "United Kingdom": "🇬🇧",
@@ -74,58 +78,11 @@ const COUNTRY_FLAGS: Record<string, string> = {
   "South Africa": "🇿🇦",
 };
 
-const DIAL_CODES: Record<string, string> = {
-  "United Kingdom": "+44",
-  Germany: "+49",
-  France: "+33",
-  Italy: "+39",
-  Sweden: "+46",
-  Netherlands: "+31",
-  Belgium: "+32",
-  Norway: "+47",
-  Denmark: "+45",
-  Finland: "+358",
-  Switzerland: "+41",
-  Austria: "+43",
-  Ireland: "+353",
-  Portugal: "+351",
-  Spain: "+34",
-  Greece: "+30",
-  Poland: "+48",
-  "Czech Republic": "+420",
-  Hungary: "+36",
-  Romania: "+40",
-  "United States": "+1",
-  USA: "+1",
-  Canada: "+1",
-  Australia: "+61",
-  Somalia: "+252",
-  Ethiopia: "+251",
-  Kenya: "+254",
-  Nigeria: "+234",
-  Ghana: "+233",
-  Eritrea: "+291",
-  Djibouti: "+253",
-  UAE: "+971",
-  "Saudi Arabia": "+966",
-  "South Africa": "+27",
-};
-
-// ─── helpers ──────────────────────────────────────────────────────────────────
-
 function flagFor(country: string | null): string {
   return COUNTRY_FLAGS[country ?? ""] ?? "🌍";
 }
 
-function formatPhone(phone: string | null, country: string | null): string {
-  if (!phone) return "—";
-  const t = phone.trim();
-  if (t.startsWith("+")) return t;
-  const code = DIAL_CODES[country ?? ""];
-  if (!code) return t;
-  const digits = t.startsWith("0") ? t.slice(1) : t;
-  return `${code} ${digits}`;
-}
+// ─── helpers ──────────────────────────────────────────────────────────────────
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
@@ -136,32 +93,43 @@ function formatDate(iso: string | null): string {
   });
 }
 
-function kycLabel(c: ApiCustomer): "Completed" | "Pending" {
-  return c.kyc_completion_date ? "Completed" : "Pending";
+function formatAmount(amount: number | null, currency: string | null): string {
+  if (!amount || !currency) return "—";
+  try {
+    return new Intl.NumberFormat("en-GB", {
+      style: "currency",
+      currency,
+      minimumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return `${amount} ${currency}`;
+  }
 }
 
-// ─── badges ───────────────────────────────────────────────────────────────────
+// ─── status badge ─────────────────────────────────────────────────────────────
 
-function KycBadge({ status }: { status: "Completed" | "Pending" }) {
-  return status === "Completed" ? (
-    <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
-      Completed
-    </span>
-  ) : (
+const PROCESSED = new Set(["Completed", "Deposited", "Paid"]);
+const CANCELLED = new Set(["Cancelled", "Cancel", "Rejected"]);
+
+function StatusBadge({ status }: { status: string | null }) {
+  if (!status) return <span className="text-xs text-slate-400">—</span>;
+  if (PROCESSED.has(status)) {
+    return (
+      <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
+        {status}
+      </span>
+    );
+  }
+  if (CANCELLED.has(status)) {
+    return (
+      <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
+        {status}
+      </span>
+    );
+  }
+  return (
     <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
-      Pending
-    </span>
-  );
-}
-
-function RiskBadge({ status }: { status: string | null }) {
-  return status === "High" ? (
-    <span className="inline-flex items-center rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-semibold text-rose-700">
-      High
-    </span>
-  ) : (
-    <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
-      {status ?? "—"}
+      {status}
     </span>
   );
 }
@@ -183,52 +151,33 @@ function FilterBar({ filters, onChange, countries }: FilterBarProps) {
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         <input
           type="text"
-          placeholder="Search by name or ID…"
+          placeholder="Search by ref, name, email, or phone…"
           value={filters.search}
           onChange={(e) => onChange("search", e.target.value)}
           className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-4 text-sm text-slate-700 shadow-sm placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
         />
       </div>
-      <div className="relative mb-3">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-        <input
-          type="text"
-          placeholder="Search by transfer reference (txn… / efu…)…"
-          value={filters.refSearch}
-          onChange={(e) => onChange("refSearch", e.target.value)}
-          className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-4 text-sm text-slate-700 shadow-sm placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
-        />
-      </div>
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-2">
+        <select
+          value={filters.status}
+          onChange={(e) => onChange("status", e.target.value)}
+          className={selectCls}
+        >
+          <option value="action-required">Action Required</option>
+          <option value="all">All Statuses</option>
+          <option value="processed">Processed</option>
+        </select>
         <select
           value={filters.country}
           onChange={(e) => onChange("country", e.target.value)}
           className={selectCls}
         >
-          <option value="All">All Countries</option>
+          <option value="All">All Destinations</option>
           {countries.map((c) => (
             <option key={c} value={c}>
               {flagFor(c)} {c}
             </option>
           ))}
-        </select>
-        <select
-          value={filters.kyc}
-          onChange={(e) => onChange("kyc", e.target.value)}
-          className={selectCls}
-        >
-          <option value="All">All KYC</option>
-          <option value="Pending">Pending</option>
-          <option value="Complete">Complete</option>
-        </select>
-        <select
-          value={filters.transfer}
-          onChange={(e) => onChange("transfer", e.target.value)}
-          className={`${selectCls} col-span-2 md:col-span-1`}
-        >
-          <option value="All">All Transfers</option>
-          <option value="Zero">Zero Transfers</option>
-          <option value="HasTransfers">Has Transfers</option>
         </select>
       </div>
     </div>
@@ -260,12 +209,11 @@ function Pagination({ page, pages, total, limit, onPage }: PaginationProps) {
     }
   }
 
-  const btn =
-    "h-8 min-w-[32px] rounded-lg px-1.5 text-xs font-medium transition";
+  const btn = "h-8 min-w-[32px] rounded-lg px-1.5 text-xs font-medium transition";
   return (
     <div className="flex flex-col items-center gap-3 rounded-2xl border border-slate-200/80 bg-white px-4 py-3 shadow-sm sm:flex-row sm:justify-between">
       <p className="text-xs text-slate-500">
-        Showing {from}–{to} of {total.toLocaleString()} customers
+        Showing {from}–{to} of {total.toLocaleString()} transfers
       </p>
       <div className="flex items-center gap-1">
         <button
@@ -310,91 +258,90 @@ function Pagination({ page, pages, total, limit, onPage }: PaginationProps) {
 
 // ─── mobile card ──────────────────────────────────────────────────────────────
 
-function CustomerCard({ customer }: { customer: ApiCustomer }) {
+function TransferCard({ transfer }: { transfer: ApiTransfer }) {
   const router = useRouter();
-  const phone = formatPhone(customer.phone_number, customer.country);
   return (
     <article
-      onClick={() => router.push(`/customer/${customer.customer_id}`)}
-      className="flex cursor-pointer items-start justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow-md"
+      onClick={() => router.push(`/customer/${transfer.customer_id}`)}
+      className="flex cursor-pointer flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow-md"
     >
-      <div className="min-w-0 flex-1 space-y-2">
+      <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          <span className="text-3xl leading-none">{flagFor(customer.country)}</span>
+          <span className="text-3xl leading-none">{flagFor(transfer.customer_country)}</span>
           <div>
             <p className="text-sm font-semibold text-slate-900">
-              {customer.full_name ?? "—"}
+              {transfer.full_name ?? "—"}
             </p>
-            <p className="text-xs text-slate-500">
-              #{customer.customer_id} · {customer.country ?? "—"}
-            </p>
+            <p className="text-xs text-slate-500">#{transfer.customer_id}</p>
           </div>
         </div>
-        <div className="flex flex-wrap gap-1.5">
-          <KycBadge status={kycLabel(customer)} />
-          <RiskBadge status={customer.risk_status} />
-        </div>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
-          <span className="font-mono">{phone}</span>
-          <span>·</span>
-          <span>Reg. {formatDate(customer.registration_date)}</span>
-        </div>
+        <StatusBadge status={transfer.status} />
       </div>
-      <button
-        onClick={() => router.push(`/customer/${customer.customer_id}`)}
-        aria-label="View profile"
-        className="mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-slate-200 bg-slate-50 text-slate-500 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
-      >
-        <ChevronRight className="h-4 w-4" />
-      </button>
+      <div className="space-y-1 text-xs text-slate-600">
+        {transfer.transaction_ref && (
+          <p>
+            <span className="font-medium text-slate-400">TassaPay: </span>
+            <span className="font-mono">{transfer.transaction_ref}</span>
+          </p>
+        )}
+        {transfer.data_field_id && (
+          <p>
+            <span className="font-medium text-slate-400">Tayo: </span>
+            <span className="font-mono">{transfer.data_field_id}</span>
+          </p>
+        )}
+      </div>
+      <div className="flex items-center justify-between text-xs text-slate-500">
+        <span>
+          {flagFor(transfer.destination_country)} {transfer.destination_country ?? "—"}
+        </span>
+        <span className="font-semibold text-slate-700">
+          {formatAmount(transfer.send_amount, transfer.send_currency)}
+        </span>
+        <span>{formatDate(transfer.created_at)}</span>
+      </div>
     </article>
   );
 }
 
 // ─── desktop table row ────────────────────────────────────────────────────────
 
-function CustomerRow({ customer }: { customer: ApiCustomer }) {
+function TransferRow({ transfer }: { transfer: ApiTransfer }) {
   const router = useRouter();
-  const phone = formatPhone(customer.phone_number, customer.country);
   return (
     <tr
       className="group cursor-pointer border-t border-slate-100 transition hover:bg-slate-50/70"
-      onClick={() => router.push(`/customer/${customer.customer_id}`)}
+      onClick={() => router.push(`/customer/${transfer.customer_id}`)}
     >
-      <td className="py-3 pl-5 pr-3 font-mono text-xs text-slate-500">
-        #{customer.customer_id}
+      <td className="whitespace-nowrap py-3 pl-5 pr-3 text-xs text-slate-500">
+        {formatDate(transfer.created_at)}
+      </td>
+      <td className="px-3 py-3 font-mono text-xs text-slate-700">
+        {transfer.transaction_ref ?? <span className="italic text-slate-400">—</span>}
+      </td>
+      <td className="px-3 py-3 font-mono text-xs text-slate-500">
+        {transfer.data_field_id ?? <span className="italic text-slate-400">—</span>}
       </td>
       <td className="px-3 py-3">
         <div className="flex items-center gap-2">
-          <span className="text-xl leading-none">{flagFor(customer.country)}</span>
+          <span className="text-xl leading-none">{flagFor(transfer.customer_country)}</span>
           <span className="text-sm font-semibold text-slate-800">
-            {customer.full_name ?? "—"}
+            {transfer.full_name ?? "—"}
           </span>
         </div>
       </td>
-      <td className="px-3 py-3 text-sm text-slate-600">{customer.country ?? "—"}</td>
-      <td className="whitespace-nowrap px-3 py-3 font-mono text-xs text-slate-600">
-        {phone}
-      </td>
       <td className="whitespace-nowrap px-3 py-3 text-sm text-slate-600">
-        {formatDate(customer.registration_date)}
+        {flagFor(transfer.destination_country)} {transfer.destination_country ?? "—"}
+      </td>
+      <td className="whitespace-nowrap px-3 py-3 text-sm font-semibold text-slate-700">
+        {formatAmount(transfer.send_amount, transfer.send_currency)}
       </td>
       <td className="px-3 py-3">
-        <KycBadge status={kycLabel(customer)} />
-      </td>
-      <td className="px-3 py-3 text-sm text-slate-600">
-        {customer.total_transfers === 0 ? (
-          <span className="italic text-slate-400">None</span>
-        ) : (
-          customer.total_transfers
-        )}
-      </td>
-      <td className="px-3 py-3">
-        <RiskBadge status={customer.risk_status} />
+        <StatusBadge status={transfer.status} />
       </td>
       <td className="py-3 pl-3 pr-5">
         <button
-          onClick={() => router.push(`/customer/${customer.customer_id}`)}
+          onClick={(e) => { e.stopPropagation(); router.push(`/customer/${transfer.customer_id}`); }}
           className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 opacity-0 shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 group-hover:opacity-100"
         >
           View <ChevronRight className="h-3.5 w-3.5" />
@@ -411,7 +358,7 @@ function EmptyState() {
     <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-300 bg-white py-16 text-center">
       <SearchX className="h-10 w-10 text-slate-300" />
       <div>
-        <p className="text-sm font-semibold text-slate-700">No customers found</p>
+        <p className="text-sm font-semibold text-slate-700">No transfers found</p>
         <p className="mt-0.5 text-xs text-slate-500">
           Try adjusting your filters or search query.
         </p>
@@ -424,8 +371,8 @@ function EmptyState() {
 
 const LIMIT = 50;
 
-export default function DirectoryPage() {
-  const [customers, setCustomers] = useState<ApiCustomer[]>([]);
+export default function TransfersPage() {
+  const [transfers, setTransfers] = useState<ApiTransfer[]>([]);
   const [total, setTotal] = useState(0);
   const [pages, setPages] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
@@ -433,52 +380,46 @@ export default function DirectoryPage() {
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<Filters>({
     search: "",
+    status: "action-required",
     country: "All",
-    kyc: "All",
-    transfer: "All",
-    refSearch: "",
   });
 
-  // Updating a filter also resets to page 1
   function updateFilter(key: keyof Filters, value: string) {
     setFilters((prev) => ({ ...prev, [key]: value }));
     setCurrentPage(1);
   }
 
-  // Populate country dropdown once on mount
+  // Populate destination country dropdown once on mount
   useEffect(() => {
-    apiFetch("/api/countries")
+    apiFetch("/api/transfers?distinct_countries=1")
       .then((r) => r.json())
       .then((data: string[]) => setCountries(data))
       .catch(() => {});
   }, []);
 
-  // Fetch customers whenever filters or page change
+  // Fetch transfers whenever filters or page change
   useEffect(() => {
     const timer = setTimeout(
       () => {
         setLoading(true);
         const params = new URLSearchParams();
+        params.set("status", filters.status);
         if (filters.country !== "All") params.set("country", filters.country);
-        if (filters.kyc !== "All") params.set("kycStatus", filters.kyc);
-        if (filters.transfer !== "All")
-          params.set("transferStatus", filters.transfer);
         if (filters.search.trim()) params.set("search", filters.search.trim());
-        if (filters.refSearch.trim()) params.set("reference_search", filters.refSearch.trim());
         params.set("page", String(currentPage));
         params.set("limit", String(LIMIT));
 
-        apiFetch(`/api/customers?${params}`)
+        apiFetch(`/api/transfers?${params}`)
           .then((r) => r.json())
           .then((res: PaginatedResponse) => {
-            setCustomers(res.data ?? []);
+            setTransfers(res.data ?? []);
             setTotal(res.total ?? 0);
             setPages(res.pages ?? 1);
             setLoading(false);
           })
           .catch(() => setLoading(false));
       },
-      filters.search || filters.refSearch ? 300 : 0
+      filters.search ? 300 : 0,
     );
     return () => clearTimeout(timer);
   }, [filters, currentPage]);
@@ -487,10 +428,10 @@ export default function DirectoryPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-          Customer Directory
+          Transfers
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          {loading ? "Loading…" : `${total.toLocaleString()} customer${total === 1 ? "" : "s"}`}
+          {loading ? "Loading…" : `${total.toLocaleString()} transfer${total === 1 ? "" : "s"}`}
         </p>
       </div>
 
@@ -499,47 +440,37 @@ export default function DirectoryPage() {
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-16 text-slate-400">
           <Loader2 className="h-5 w-5 animate-spin" />
-          <span className="text-sm">Loading customers…</span>
+          <span className="text-sm">Loading transfers…</span>
         </div>
-      ) : customers.length === 0 ? (
+      ) : transfers.length === 0 ? (
         <EmptyState />
       ) : (
         <>
           {/* Mobile: stacked cards */}
           <div className="space-y-3 md:hidden">
-            {customers.map((c) => (
-              <CustomerCard key={c.customer_id} customer={c} />
+            {transfers.map((t) => (
+              <TransferCard key={t.id} transfer={t} />
             ))}
           </div>
 
-          {/* Desktop: scrollable table */}
-          <div className="hidden overflow-x-auto rounded-2xl border border-slate-200/80 bg-white shadow-sm md:block">
-            <table className="w-full text-left">
+          {/* Desktop: table */}
+          <div className="hidden overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm md:block">
+            <table className="w-full table-auto text-left">
               <thead>
-                <tr className="bg-slate-50/80">
-                  {[
-                    "ID",
-                    "Name",
-                    "Country",
-                    "Phone",
-                    "Registered",
-                    "KYC",
-                    "Transfers",
-                    "Risk",
-                    "",
-                  ].map((h) => (
-                    <th
-                      key={h}
-                      className="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 first:pl-5 last:pr-5"
-                    >
-                      {h}
-                    </th>
-                  ))}
+                <tr className="bg-slate-50/80 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <th className="py-3 pl-5 pr-3">Date</th>
+                  <th className="px-3 py-3">TassaPay Ref</th>
+                  <th className="px-3 py-3">Tayo Ref</th>
+                  <th className="px-3 py-3">Customer</th>
+                  <th className="px-3 py-3">Destination</th>
+                  <th className="px-3 py-3">Amount</th>
+                  <th className="px-3 py-3">Status</th>
+                  <th className="py-3 pl-3 pr-5" />
                 </tr>
               </thead>
               <tbody>
-                {customers.map((c) => (
-                  <CustomerRow key={c.customer_id} customer={c} />
+                {transfers.map((t) => (
+                  <TransferRow key={t.id} transfer={t} />
                 ))}
               </tbody>
             </table>

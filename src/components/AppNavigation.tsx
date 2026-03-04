@@ -4,7 +4,7 @@ import { useState, type ComponentType } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  BarChart2, Bell, Bot, CheckSquare, FileText,
+  ArrowLeftRight, BarChart2, Bell, Bot, CheckSquare, FileText,
   LayoutDashboard, ListFilter, LogOut, Menu, RefreshCw, Activity,
   ShieldAlert, Users, UsersRound, X,
 } from "lucide-react";
@@ -18,6 +18,7 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   { label: "Directory",   href: "/directory",    icon: Users },
+  { label: "Transfers",   href: "/transfers",    icon: ArrowLeftRight },
   { label: "My Tasks",    href: "/my-tasks",     icon: CheckSquare },
   { label: "QA",          href: "/qa-transfers", icon: ShieldAlert },
   { label: "Templates",   href: "/templates",    icon: FileText },
@@ -42,6 +43,7 @@ const bottomItems: NavItem[] = [
 
 // All other links live in the More drawer
 const drawerItems: NavItem[] = [
+  { label: "Transfers",   href: "/transfers",    icon: ArrowLeftRight },
   { label: "QA",          href: "/qa-transfers", icon: ShieldAlert },
   { label: "Templates",   href: "/templates",    icon: FileText },
   { label: "Automations", href: "/automations",  icon: Bot },
