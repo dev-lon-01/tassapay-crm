@@ -15,7 +15,7 @@
  */
 
 import twilio from "twilio";
-import sgMail from "@sendgrid/mail";
+import { Resend } from "resend";
 import { pool } from "@/src/lib/db";
 import { sendPushoverAlert } from "@/src/lib/pushover";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
@@ -78,7 +78,8 @@ export async function checkAndFireSlaAlerts(): Promise<void> {
     process.env.TWILIO_ACCOUNT_SID!,
     process.env.TWILIO_AUTH_TOKEN!
   );
-  sgMail.setApiKey(process.env.SENDGRID_API_KEY!);
+  const resend = new Resend(process.env.RESEND_API_KEY!);
+  const FROM = `TassaPay <${process.env.RESEND_FROM_EMAIL ?? "noreply@tassapay.com"}>`;
 
   for (const transfer of lateTransfers) {
     if (!transfer.send_currency) continue;
@@ -121,18 +122,23 @@ export async function checkAndFireSlaAlerts(): Promise<void> {
       );
     }
 
-    // ── 3b. SendGrid emails ────────────────────────────────────────────────
+    // ── 3b. Resend emails ─────────────────────────────────────────────────
     for (const email of emails) {
       dispatchPromises.push(
-        sgMail
+        resend.emails
           .send({
-            to: email,
-            from: {
-              email: process.env.SENDGRID_FROM_EMAIL!,
-              name:  process.env.SENDGRID_FROM_NAME ?? "TassaPay",
-            },
+            from: FROM,
+            to: [email],
             subject: `🚨 Urgent: Somalia Transfer Delayed — ${transfer.transaction_ref}`,
             text: message,
+            html: `<p style="font-family:sans-serif">${message}</p>`,
+          })
+          .then(({ error }) => {
+            if (error)
+              console.error(
+                `[SLA] Email to ${email} for ${transfer.transaction_ref} failed:`,
+                error.message
+              );
           })
           .catch((err: Error) =>
             console.error(

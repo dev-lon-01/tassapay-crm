@@ -206,6 +206,9 @@ export default function CustomerProfilePage({
 
   const [templates, setTemplates] = useState<ApiTemplate[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
+  const [beneficiaryTransferId, setBeneficiaryTransferId] = useState("");
+  const [beneficiaryAmount, setBeneficiaryAmount] = useState("");
 
   const [toast, setToast] = useState<{
     message: string;
@@ -286,6 +289,7 @@ export default function CustomerProfilePage({
         if (tpl.subject) setEmailSubject(fill(tpl.subject));
       }
       setSelectedTemplate("");
+      setSelectedTemplateId(tpl.id);
     },
     [templates, customer, activeTab]
   );
@@ -293,6 +297,9 @@ export default function CustomerProfilePage({
   const handleTabChange = useCallback((tab: LoggerTab) => {
     setActiveTab(tab);
     setSelectedTemplate("");
+    setSelectedTemplateId(null);
+    setBeneficiaryTransferId("");
+    setBeneficiaryAmount("");
   }, []);
 
   async function handleSend() {
@@ -319,16 +326,25 @@ export default function CustomerProfilePage({
         setSmsMessage("");
         setToast({ message: "SMS sent & logged!", type: "success" });
       } else if (activeTab === "Email") {
+        // Template id 6 = "Beneficiary Information Update Required"
+        const emailPayload: Record<string, unknown> = {
+          customerId: params.id,
+          agentId: user?.id ?? null,
+          overrideEmail: emailTo.trim(),
+          subject: emailSubject.trim(),
+          message: emailBody.trim(),
+        };
+        if (selectedTemplateId === 6) {
+          emailPayload.templateId = 6;
+          emailPayload.templateData = {
+            transferId: beneficiaryTransferId.trim(),
+            amount: beneficiaryAmount.trim(),
+          };
+        }
         const res = await apiFetch("/api/communicate/email", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            customerId: params.id,
-            agentId: user?.id ?? null,
-            overrideEmail: emailTo.trim(),
-            subject: emailSubject.trim(),
-            message: emailBody.trim(),
-          }),
+          body: JSON.stringify(emailPayload),
         });
         if (!res.ok) {
           const err = await res.json();
@@ -338,6 +354,9 @@ export default function CustomerProfilePage({
         setTimeline((prev) => [interaction, ...prev]);
         setEmailSubject("");
         setEmailBody("");
+        setSelectedTemplateId(null);
+        setBeneficiaryTransferId("");
+        setBeneficiaryAmount("");
         setToast({ message: "Email sent & logged!", type: "success" });
       } else {
         const res = await apiFetch("/api/interactions", {
@@ -864,6 +883,28 @@ export default function CustomerProfilePage({
                 className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-400"
               />
             </div>
+            {/* Beneficiary template extra fields — shown only when template id=6 is active */}
+            {selectedTemplateId === 6 && (
+              <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <p className="text-xs font-semibold text-amber-700">
+                  Beneficiary Issue Details
+                </p>
+                <input
+                  type="text"
+                  value={beneficiaryTransferId}
+                  onChange={(e) => setBeneficiaryTransferId(e.target.value)}
+                  placeholder="Transfer ID (e.g. TAS-12345)"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                />
+                <input
+                  type="text"
+                  value={beneficiaryAmount}
+                  onChange={(e) => setBeneficiaryAmount(e.target.value)}
+                  placeholder="Amount (e.g. £500 GBP)"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                />
+              </div>
+            )}
           </div>
         )}
 

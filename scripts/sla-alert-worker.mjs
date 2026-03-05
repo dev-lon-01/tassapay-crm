@@ -28,7 +28,7 @@ for (const line of envLines) {
 // ── Imports (CJS interop) ─────────────────────────────────────────────────────
 const cron   = require("node-cron");
 const twilio = require("twilio");
-const sgMail = require("@sendgrid/mail");
+const { Resend } = require("resend");
 const mysql  = require("mysql2/promise");
 
 // ── DB pool ───────────────────────────────────────────────────────────────────
@@ -79,7 +79,8 @@ async function checkAndFireSlaAlerts() {
     process.env.TWILIO_ACCOUNT_SID,
     process.env.TWILIO_AUTH_TOKEN
   );
-  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+  const resend  = new Resend(process.env.RESEND_API_KEY);
+  const FROM    = `TassaPay <${process.env.RESEND_FROM_EMAIL ?? "noreply@tassapay.com"}>`;
 
   // Collect transfers per pushover routing key for a single summary push at end
   const pushoverSummaries = new Map(); // routingKey → { routing, transfers[] }
@@ -122,14 +123,20 @@ async function checkAndFireSlaAlerts() {
 
     for (const email of emails) {
       promises.push(
-        sgMail.send({
-          to:      email,
-          from:    { email: process.env.SENDGRID_FROM_EMAIL, name: process.env.SENDGRID_FROM_NAME ?? "TassaPay" },
-          subject: `🚨 Urgent: Somalia Transfer Delayed — ${transfer.transaction_ref}`,
-          text:    message,
-        }).catch((err) =>
-          console.error(`[SLA] Email to ${email} failed:`, err.message)
-        )
+        resend.emails
+          .send({
+            from:    FROM,
+            to:      [email],
+            subject: `🚨 Urgent: Somalia Transfer Delayed — ${transfer.transaction_ref}`,
+            text:    message,
+            html:    `<p style="font-family:sans-serif">${message}</p>`,
+          })
+          .then(({ error }) => {
+            if (error) console.error(`[SLA] Email to ${email} failed:`, error.message);
+          })
+          .catch((err) =>
+            console.error(`[SLA] Email to ${email} failed:`, err.message)
+          )
       );
     }
 

@@ -14,21 +14,22 @@
     "api:test": "node scripts/test-api.mjs"
   },
   "dependencies": {
-    "@sendgrid/mail": "^8.1.6",
+    "@react-email/components": "^1.0.8",
+    "@react-email/render": "^2.0.4",
     "@twilio/voice-sdk": "^2.18.0",
+    "@types/papaparse": "^5.5.2",
     "axios": "^1.13.5",
     "bcryptjs": "^3.0.3",
-    "form-data": "^4.0.5",
     "jsonwebtoken": "^9.0.3",
     "lucide-react": "^0.542.0",
-    "mailgun.js": "^12.7.0",
     "mysql2": "^3.18.0",
     "next": "13.5.11",
     "node-cron": "^4.2.1",
-    "nodemailer": "^8.0.1",
+    "papaparse": "^5.5.3",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "recharts": "^3.7.0",
+    "resend": "^6.9.3",
     "twilio": "^5.12.2"
   },
   "devDependencies": {

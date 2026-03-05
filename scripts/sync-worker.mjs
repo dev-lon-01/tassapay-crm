@@ -36,7 +36,7 @@ for (const line of envLines) {
 // ── CJS imports ───────────────────────────────────────────────────────────────
 const cron        = require("node-cron");
 const twilio      = require("twilio");
-const nodemailer  = require("nodemailer");
+const { Resend }  = require("resend");
 const mysql       = require("mysql2/promise");
 const fetch   = require("node-fetch");
 const { syncLatestTransfers } = require("../src/services/tayoSyncService");
@@ -368,15 +368,8 @@ async function checkAndFireSlaAlerts() {
   }
 
   const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-  const mailer = nodemailer.createTransport({
-    host:   process.env.SMTP_HOST     ?? "smtp.mailgun.org",
-    port:   Number(process.env.SMTP_PORT ?? 587),
-    secure: false,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-  });
+  const resend = new Resend(process.env.RESEND_API_KEY);
+  const FROM   = `TassaPay <${process.env.RESEND_FROM_EMAIL ?? "noreply@tassapay.com"}>`;
 
   for (const [currency, group] of Object.entries(byCurrency)) {
     const [routingRows] = await pool.execute(
@@ -431,12 +424,18 @@ async function checkAndFireSlaAlerts() {
 
     for (const email of emails) {
       promises.push(
-        mailer.sendMail({
-          from:    `"${process.env.SMTP_FROM_NAME ?? "TassaPay"}" <${process.env.SMTP_FROM_EMAIL ?? "noreply@tassapay.com"}>`,
-          to:      email,
-          subject: emailSubject,
-          text:    emailText,
-        }).catch((err) => console.error(`[SLA] Email to ${email} failed:`, err.message))
+        resend.emails
+          .send({
+            from:    FROM,
+            to:      [email],
+            subject: emailSubject,
+            text:    emailText,
+            html:    `<pre style="font-family:sans-serif;white-space:pre-wrap">${emailText}</pre>`,
+          })
+          .then(({ error }) => {
+            if (error) console.error(`[SLA] Email to ${email} failed:`, error.message);
+          })
+          .catch((err) => console.error(`[SLA] Email to ${email} failed:`, err.message))
       );
     }
 
