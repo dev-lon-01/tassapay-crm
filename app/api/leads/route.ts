@@ -35,6 +35,9 @@ export async function GET(req: NextRequest) {
   const search         = searchParams.get("search");
   const labelsParam    = searchParams.get("labels");
   const showDead       = searchParams.get("show_dead") === "1";
+  const page           = Math.max(1, Number(searchParams.get("page") ?? 1));
+  const limit          = Math.min(200, Math.max(1, Number(searchParams.get("limit") ?? 50)));
+  const offset         = (page - 1) * limit;
 
   const conditions: string[] = ["is_lead = 1"];
   const params: (string | number)[] = [];
@@ -80,6 +83,11 @@ export async function GET(req: NextRequest) {
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
   try {
+    const [[{ total }]] = await pool.execute<RowDataPacket[]>(
+      `SELECT COUNT(*) AS total FROM customers c ${where}`,
+      params
+    );
+
     const [rows] = await pool.execute<RowDataPacket[]>(
       `SELECT c.customer_id, c.full_name, c.phone_number, c.email, c.country,
               c.is_lead, c.lead_stage, c.assigned_agent_id, c.labels, c.created_at,
@@ -89,11 +97,18 @@ export async function GET(req: NextRequest) {
        ${where}
        ORDER BY
          FIELD(c.lead_stage, 'New', 'Contacted', 'Follow-up', 'Converted', 'Dead'),
-         c.created_at DESC`,
+         c.created_at DESC
+       LIMIT ${limit} OFFSET ${offset}`,
       params
     );
 
-    return NextResponse.json({ data: rows });
+    return NextResponse.json({
+      data:  rows,
+      total: Number(total),
+      page,
+      limit,
+      pages: Math.ceil(Number(total) / limit),
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[GET /api/leads]", message);

@@ -853,6 +853,10 @@ export default function LeadsPage() {
   const [leads, setLeads]           = useState<Lead[]>([]);
   const [agents, setAgents]         = useState<Agent[]>([]);
   const [loading, setLoading]       = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalLeads, setTotalLeads]   = useState(0);
+  const [hasMore, setHasMore]         = useState(false);
   const [search, setSearch]         = useState("");
   const [filterCountry, setFilterCountry] = useState("");
   const [filterAgent, setFilterAgent]     = useState("all");
@@ -868,9 +872,11 @@ export default function LeadsPage() {
   // Derive unique countries from loaded leads
   const countries = [...new Set(leads.map((l) => l.country).filter(Boolean) as string[])].sort();
 
-  const loadLeads = useCallback(async () => {
-    setLoading(true);
-    const qp = new URLSearchParams({ limit: "500" });
+  const loadLeads = useCallback(async (page = 1, append = false) => {
+    if (!append) setLoading(true);
+    else setLoadingMore(true);
+
+    const qp = new URLSearchParams({ limit: "50", page: String(page) });
     if (filterCountry) qp.set("country", filterCountry);
     if (filterAgent !== "all") qp.set("assigned_agent", filterAgent);
     if (search) qp.set("search", search);
@@ -884,15 +890,21 @@ export default function LeadsPage() {
         ...r,
         labels: typeof r.labels === "string" ? JSON.parse(r.labels) : (r.labels ?? []),
       }));
-      setLeads(rows);
 
-      // Collect all unique labels across leads
-      const lblSet = new Set<string>();
-      rows.forEach((l) => getLabels(l).forEach((lbl) => lblSet.add(lbl)));
-      setAllLabels([...lblSet].sort());
-      setQueue(rows.map((r) => r.customer_id));
+      setLeads((prev) => {
+        const next = append ? [...prev, ...rows] : rows;
+        const lblSet = new Set<string>();
+        next.forEach((l) => getLabels(l).forEach((lbl) => lblSet.add(lbl)));
+        setAllLabels([...lblSet].sort());
+        setQueue(next.map((r) => r.customer_id));
+        return next;
+      });
+      setTotalLeads(data.total ?? rows.length);
+      setHasMore(page < (data.pages ?? 1));
+      setCurrentPage(page);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   }, [filterCountry, filterAgent, search, filterLabels]);
 
@@ -929,7 +941,7 @@ export default function LeadsPage() {
             </div>
             <div>
               <h1 className="text-lg font-bold text-slate-900">Leads Pipeline</h1>
-              <p className="text-xs text-slate-400">{totalActive} active</p>
+              <p className="text-xs text-slate-400">{totalActive} active · {totalLeads} total</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -1036,7 +1048,7 @@ export default function LeadsPage() {
             </div>
           )}
 
-          <button onClick={loadLeads} title="Refresh" className="ml-auto rounded-xl border border-slate-200 p-2 hover:bg-slate-50">
+          <button onClick={() => loadLeads()} title="Refresh" className="ml-auto rounded-xl border border-slate-200 p-2 hover:bg-slate-50">
             <RefreshCw size={14} className="text-slate-500" />
           </button>
         </div>
@@ -1088,6 +1100,23 @@ export default function LeadsPage() {
         </div>
       )}
 
+      {/* ── Load More ──────────────────────────────────────────────────────── */}
+      {!loading && hasMore && (
+        <div className="flex justify-center border-t border-slate-100 bg-white px-4 py-4">
+          <button
+            onClick={() => loadLeads(currentPage + 1, true)}
+            disabled={loadingMore}
+            className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+          >
+            {loadingMore ? (
+              <><Loader2 size={14} className="animate-spin" /> Loading…</>
+            ) : (
+              <>Load More <span className="ml-1 text-slate-400">({leads.length} of {totalLeads})</span></>
+            )}
+          </button>
+        </div>
+      )}
+
       {/* ── Modals ─────────────────────────────────────────────────────────── */}
       {showCreate && (
         <CreateLeadModal
@@ -1104,7 +1133,7 @@ export default function LeadsPage() {
       {showBulk && (
         <BulkImportModal
           onClose={() => setShowBulk(false)}
-          onImported={loadLeads}
+          onImported={() => loadLeads()}
         />
       )}
 
