@@ -43,6 +43,12 @@ CREATE TABLE IF NOT EXISTS `customers` (
   `synced_at`            DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `created_at`           DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
+  -- Lead pipeline fields
+  `is_lead`              TINYINT(1)    NOT NULL DEFAULT 0,            -- 1 = prospect; 0 = full customer
+  `lead_stage`           ENUM('New','Contacted','Follow-up','Converted','Dead') DEFAULT NULL,
+  `assigned_agent_id`    INT           DEFAULT NULL,                  -- FK → users.id
+  `labels`               JSON          DEFAULT NULL,                  -- e.g. ["VIP","facebook_ad"]
+
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_customer_id` (`customer_id`),
   CONSTRAINT `fk_customers_user`
@@ -51,10 +57,15 @@ CREATE TABLE IF NOT EXISTS `customers` (
   CONSTRAINT `fk_customers_kyc_agent`
     FOREIGN KEY (`kyc_attributed_agent_id`) REFERENCES `users` (`id`)
     ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_customers_assigned_agent`
+    FOREIGN KEY (`assigned_agent_id`) REFERENCES `users` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE,
   INDEX `idx_full_name`   (`full_name`),
   INDEX `idx_email`       (`email`),
   INDEX `idx_risk_status` (`risk_status`),
-  INDEX `idx_registered`  (`registration_date`)
+  INDEX `idx_registered`  (`registration_date`),
+  INDEX `idx_is_lead`      (`is_lead`),
+  INDEX `idx_lead_stage`   (`lead_stage`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ─── interactions (agent activity log) ────────────────────────────────────────

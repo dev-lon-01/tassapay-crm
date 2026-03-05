@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   ArrowLeftRight, BarChart2, Bell, Bot, CheckSquare, FileText,
   LayoutDashboard, ListFilter, LogOut, Menu, RefreshCw, Activity,
-  ShieldAlert, Users, UsersRound, X,
+  ShieldAlert, Users, UsersRound, X, UserPlus,
 } from "lucide-react";
 import { useAuth } from "@/src/context/AuthContext";
 
@@ -18,6 +18,7 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   { label: "Directory",   href: "/directory",    icon: Users },
+  { label: "Leads",       href: "/leads",        icon: UserPlus },
   { label: "Transfers",   href: "/transfers",    icon: ArrowLeftRight },
   { label: "My Tasks",    href: "/my-tasks",     icon: CheckSquare },
   { label: "QA",          href: "/qa-transfers", icon: ShieldAlert },
@@ -43,6 +44,7 @@ const bottomItems: NavItem[] = [
 
 // All other links live in the More drawer
 const drawerItems: NavItem[] = [
+  { label: "Leads",       href: "/leads",        icon: UserPlus },
   { label: "Transfers",   href: "/transfers",    icon: ArrowLeftRight },
   { label: "QA",          href: "/qa-transfers", icon: ShieldAlert },
   { label: "Templates",   href: "/templates",    icon: FileText },
