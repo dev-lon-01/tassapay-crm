@@ -24,13 +24,13 @@ const DOMAIN = "https://tassapay.co.uk";
 // ── Styles ───────────────────────────────────────────────────────────────────
 
 const main: React.CSSProperties = {
-  backgroundColor: "#f8fafc",
+  backgroundColor: "#f0f2f8",
   fontFamily:
     '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
 };
 
 const headerSection: React.CSSProperties = {
-  backgroundColor: "#10b981",
+  backgroundColor: "#222c67",
   padding: "20px 40px",
   textAlign: "center",
 };
@@ -41,7 +41,7 @@ const container: React.CSSProperties = {
   margin: "24px auto",
   maxWidth: "600px",
   padding: "40px",
-  border: "1px solid #e2e8f0",
+  border: "1px solid #d1d8f0",
 };
 
 const footerSection: React.CSSProperties = {
@@ -51,13 +51,13 @@ const footerSection: React.CSSProperties = {
 };
 
 const hr: React.CSSProperties = {
-  borderColor: "#e2e8f0",
+  borderColor: "#dcb050",
   margin: "24px 0",
 };
 
-const appBadge: React.CSSProperties = {
+const whatsappBadge: React.CSSProperties = {
   display: "inline-block",
-  backgroundColor: "#0f172a",
+  backgroundColor: "#25D366",
   color: "#ffffff",
   borderRadius: "8px",
   padding: "9px 14px",
@@ -67,13 +67,8 @@ const appBadge: React.CSSProperties = {
   letterSpacing: "0.2px",
 };
 
-const whatsappBadge: React.CSSProperties = {
-  ...appBadge,
-  backgroundColor: "#25D366",
-};
-
 const legalText: React.CSSProperties = {
-  color: "#94a3b8",
+  color: "#64748b",
   fontSize: "11px",
   margin: "16px 0 4px",
   lineHeight: "1.6",
@@ -81,7 +76,7 @@ const legalText: React.CSSProperties = {
 };
 
 const copyrightText: React.CSSProperties = {
-  color: "#cbd5e1",
+  color: "#94a3b8",
   fontSize: "11px",
   margin: "4px 0 0",
   textAlign: "center",
@@ -118,19 +113,23 @@ export function EmailLayout({ preview, children }: EmailLayoutProps) {
           {/* App / WhatsApp links */}
           <Row style={{ marginBottom: "8px" }}>
             <Column align="center">
-              <Link
-                href="https://apps.apple.com/us/app/tassapay/id6478577638"
-                style={appBadge}
-              >
-                🍎 App Store
+              <Link href="https://apps.apple.com/us/app/tassapay/id6478577638">
+                <Img
+                  src={`${DOMAIN}/download-on-the-app-store.svg`}
+                  alt="Download on the App Store"
+                  height={40}
+                  style={{ display: "block" }}
+                />
               </Link>
             </Column>
             <Column align="center">
-              <Link
-                href="https://play.google.com/store/apps/details?id=com.org.tassapay"
-                style={appBadge}
-              >
-                ▶ Google Play
+              <Link href="https://play.google.com/store/apps/details?id=com.org.tassapay">
+                <Img
+                  src={`${DOMAIN}/Google_Play_Store_badge_EN.svg`}
+                  alt="Get it on Google Play"
+                  height={40}
+                  style={{ display: "block" }}
+                />
               </Link>
             </Column>
             <Column align="center">
