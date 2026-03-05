@@ -6,7 +6,7 @@ import {
   ArrowLeft, Mail, Phone, MapPin, Calendar, AtSign, FileText,
   AlertCircle, Loader2, MessageSquare, Send, CheckCircle, XCircle,
   Mic, MicOff, PhoneOff, PlayCircle, Tag, ChevronDown, User,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, Pencil, Plus, X,
 } from "lucide-react";
 import { normalizePhone } from "@/src/lib/phoneUtils";
 import { apiFetch } from "@/src/lib/apiFetch";
@@ -123,7 +123,279 @@ function timelineColor(type: ApiInteraction["type"]) {
 }
 
 const NOTE_PLACEHOLDER = "Select outcome…";
+// ─── Agent type + COUNTRIES + helpers ─────────────────────────────────────────────
 
+interface Agent { id: number; name: string; }
+
+const COUNTRIES: { name: string; dial: string }[] = [
+  { name: "United Kingdom",  dial: "+44"  },
+  { name: "Ireland",         dial: "+353" },
+  { name: "Germany",         dial: "+49"  },
+  { name: "France",          dial: "+33"  },
+  { name: "Spain",           dial: "+34"  },
+  { name: "Italy",           dial: "+39"  },
+  { name: "Netherlands",     dial: "+31"  },
+  { name: "Belgium",         dial: "+32"  },
+  { name: "Portugal",        dial: "+351" },
+  { name: "Sweden",          dial: "+46"  },
+  { name: "Denmark",         dial: "+45"  },
+  { name: "Finland",         dial: "+358" },
+  { name: "Austria",         dial: "+43"  },
+  { name: "Greece",          dial: "+30"  },
+  { name: "Poland",          dial: "+48"  },
+  { name: "Czech Republic",  dial: "+420" },
+  { name: "Hungary",         dial: "+36"  },
+  { name: "Romania",         dial: "+40"  },
+  { name: "Bulgaria",        dial: "+359" },
+  { name: "Croatia",         dial: "+385" },
+  { name: "Slovakia",        dial: "+421" },
+  { name: "Slovenia",        dial: "+386" },
+  { name: "Estonia",         dial: "+372" },
+  { name: "Latvia",          dial: "+371" },
+  { name: "Lithuania",       dial: "+370" },
+  { name: "Luxembourg",      dial: "+352" },
+  { name: "Malta",           dial: "+356" },
+  { name: "Cyprus",          dial: "+357" },
+];
+
+function dialCodeFor(countryName: string): string {
+  return COUNTRIES.find((c) => c.name === countryName)?.dial ?? "";
+}
+
+function swapPrefix(currentPhone: string, newDial: string): string {
+  let local = currentPhone.trim();
+  for (const c of COUNTRIES) {
+    if (local.startsWith(c.dial)) {
+      local = local.slice(c.dial.length).replace(/^0+/, "");
+      break;
+    }
+  }
+  local = local.replace(/^\+/, "");
+  return newDial + local;
+}
+
+// ─── Labels Multi-Select ──────────────────────────────────────────────────────────────
+
+function LabelsSelect({
+  value,
+  onChange,
+  options,
+  inputId,
+}: {
+  value: string[];
+  onChange: (labels: string[]) => void;
+  options: string[];
+  inputId?: string;
+}) {
+  const [inputVal, setInputVal] = useState("");
+  const [open, setOpen]         = useState(false);
+
+  const filtered = options.filter(
+    (o) => !value.includes(o) && o.toLowerCase().includes(inputVal.toLowerCase()),
+  );
+  const trimmed    = inputVal.trim();
+  const showCreate = Boolean(trimmed) && !options.includes(trimmed) && !value.includes(trimmed);
+
+  function add(label: string) {
+    const t = label.trim();
+    if (!t || value.includes(t)) return;
+    onChange([...value, t]);
+    setInputVal("");
+  }
+
+  function remove(label: string) {
+    onChange(value.filter((l) => l !== label));
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (trimmed) add(trimmed);
+    } else if (e.key === "Backspace" && !inputVal && value.length > 0) {
+      remove(value[value.length - 1]);
+    }
+  }
+
+  return (
+    <div className="relative">
+      <div
+        className="flex min-h-[42px] flex-wrap items-center gap-1 rounded-xl border border-slate-200 px-2 py-1.5 focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 cursor-text"
+        onClick={() => document.getElementById(inputId ?? "labels-input-detail")?.focus()}
+      >
+        {value.map((lbl) => (
+          <span key={lbl} className="flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-800">
+            {lbl}
+            <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => remove(lbl)} className="ml-0.5 text-indigo-400 hover:text-indigo-700">
+              <X size={11} />
+            </button>
+          </span>
+        ))}
+        <input
+          id={inputId ?? "labels-input-detail"}
+          className="min-w-[80px] flex-1 bg-transparent text-sm outline-none"
+          placeholder={value.length === 0 ? "Add labels…" : ""}
+          value={inputVal}
+          onChange={(e) => { setInputVal(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          onKeyDown={handleKeyDown}
+        />
+      </div>
+      {open && (filtered.length > 0 || showCreate) && (
+        <div className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+          {showCreate && (
+            <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => add(trimmed)}
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-indigo-600 hover:bg-indigo-50">
+              <Plus size={13} /> Create &ldquo;{trimmed}&rdquo;
+            </button>
+          )}
+          {filtered.map((opt) => (
+            <button key={opt} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => add(opt)}
+              className="flex w-full items-center px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+              {opt}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Edit Lead Modal ───────────────────────────────────────────────────────────
+
+function EditLeadModal({
+  lead,
+  agents,
+  existingLabels,
+  onClose,
+  onUpdated,
+}: {
+  lead: LeadProfile;
+  agents: Agent[];
+  existingLabels: string[];
+  onClose: () => void;
+  onUpdated: (updated: LeadProfile) => void;
+}) {
+  const [form, setForm] = useState({
+    name:              lead.full_name ?? "",
+    country:           lead.country ?? "",
+    phone:             lead.phone_number ?? "",
+    email:             lead.email ?? "",
+    assigned_agent_id: lead.assigned_agent_id ? String(lead.assigned_agent_id) : "",
+  });
+  const [labels, setLabels] = useState<string[]>(getLabels(lead.labels));
+  const [saving, setSaving] = useState(false);
+  const [error, setError]   = useState<string | null>(null);
+
+  function handleCountryChange(countryName: string) {
+    const dial = dialCodeFor(countryName);
+    if (!dial) { setForm((prev) => ({ ...prev, country: countryName })); return; }
+    setForm((prev) => ({ ...prev, country: countryName, phone: swapPrefix(prev.phone, dial) }));
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await apiFetch(`/api/leads/${lead.customer_id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name:              form.name.trim(),
+          phone:             form.phone.trim(),
+          country:           form.country.trim(),
+          email:             form.email.trim() || null,
+          assigned_agent_id: form.assigned_agent_id ? Number(form.assigned_agent_id) : null,
+          labels,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to update lead");
+      onUpdated(data as LeadProfile);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm">
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+        <div className="mb-5 flex items-center justify-between">
+          <h2 className="text-lg font-bold text-slate-900">Edit Lead</h2>
+          <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-slate-100"><X size={18} /></button>
+        </div>
+        <form onSubmit={submit} className="space-y-4">
+          {error && (
+            <div className="flex items-center gap-2 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
+              <AlertCircle size={15} /> {error}
+            </div>
+          )}
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-slate-600">Name *</label>
+            <input required autoFocus
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-slate-600">Country *</label>
+            <select required
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              value={form.country}
+              onChange={(e) => handleCountryChange(e.target.value)}>
+              <option value="">— Select country —</option>
+              {form.country && !COUNTRIES.find((c) => c.name === form.country) && (
+                <option value={form.country}>{form.country}</option>
+              )}
+              {COUNTRIES.map((c) => (
+                <option key={c.name} value={c.name}>{c.name} ({c.dial})</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-slate-600">Phone (E.164) *</label>
+            <input required placeholder="+447911123456"
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-mono outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-slate-600">Email</label>
+            <input type="email" placeholder="optional"
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-slate-600">Assign to agent</label>
+            <select
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              value={form.assigned_agent_id}
+              onChange={(e) => setForm({ ...form, assigned_agent_id: e.target.value })}>
+              <option value="">— Unassigned —</option>
+              {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-slate-600">Labels</label>
+            <LabelsSelect value={labels} onChange={setLabels} options={existingLabels} inputId="detail-edit-labels" />
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={onClose}
+              className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">
+              Cancel
+            </button>
+            <button type="submit" disabled={saving}
+              className="flex-1 rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2">
+              {saving && <Loader2 size={14} className="animate-spin" />}
+              Save Changes
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function LeadProfilePage({ params }: { params: { id: string } }) {
@@ -163,6 +435,10 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
 
   const [stageSaving, setStageSaving] = useState(false);
 
+  const [editOpen, setEditOpen]             = useState(false);
+  const [agents, setAgents]                 = useState<Agent[]>([]);
+  const [existingLabels, setExistingLabels] = useState<string[]>([]);
+
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
   useEffect(() => {
@@ -195,6 +471,20 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
     apiFetch("/api/templates")
       .then((r) => r.json())
       .then((data) => setTemplates(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    apiFetch("/api/users")
+      .then((r) => r.json())
+      .then((data) => setAgents(Array.isArray(data) ? data : (data.data ?? [])))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    apiFetch("/api/leads/labels")
+      .then((r) => r.json())
+      .then((data) => setExistingLabels(data.labels ?? []))
       .catch(() => {});
   }, []);
 
@@ -373,10 +663,18 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
               <p className="mt-0.5 font-mono text-xs text-slate-400">{lead.customer_id}</p>
             </div>
           </div>
-          {/* Lead Stage badge */}
-          <span className={`inline-flex flex-shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold ${STAGE_COLORS[currentStage as LeadStage]}`}>
-            {currentStage}
-          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setEditOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-500 shadow-sm hover:border-indigo-300 hover:text-indigo-600 transition"
+            >
+              <Pencil size={13} /> Edit
+            </button>
+            {/* Lead Stage badge */}
+            <span className={`inline-flex flex-shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold ${STAGE_COLORS[currentStage as LeadStage]}`}>
+              {currentStage}
+            </span>
+          </div>
         </div>
 
         {/* Contact details */}
@@ -643,6 +941,21 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
           </ol>
         )}
       </div>
+
+      {/* Edit Lead Modal */}
+      {editOpen && lead && (
+        <EditLeadModal
+          lead={lead}
+          agents={agents}
+          existingLabels={existingLabels}
+          onClose={() => setEditOpen(false)}
+          onUpdated={(updated) => {
+            setLead(updated);
+            setToast({ message: "Lead updated", type: "success" });
+            setEditOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }

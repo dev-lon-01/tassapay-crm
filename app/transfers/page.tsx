@@ -163,9 +163,11 @@ function FilterBar({ filters, onChange, countries }: FilterBarProps) {
           onChange={(e) => onChange("status", e.target.value)}
           className={selectCls}
         >
+          <option value="not-paid">Not Paid</option>
+          <option value="in-progress">In Progress</option>
+          <option value="paid">Paid</option>
           <option value="action-required">Action Required</option>
           <option value="all">All Statuses</option>
-          <option value="processed">Processed</option>
         </select>
         <select
           value={filters.country}
@@ -380,7 +382,7 @@ export default function TransfersPage() {
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<Filters>({
     search: "",
-    status: "action-required",
+    status: "not-paid",
     country: "All",
   });
 

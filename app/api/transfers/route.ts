@@ -13,7 +13,7 @@ import type { RowDataPacket } from "mysql2";
  *
  * Query params:
  *   ?search=              – LIKE on transaction_ref, data_field_id, full_name, email, phone_number
- *   ?status=              – "action-required" (default) | "all" | "processed"
+ *   ?status=              – "not-paid" (default) | "in-progress" | "paid" | "action-required" | "all"
  *   ?country=             – exact match on transfers.destination_country
  *   ?page=                – page number (default: 1)
  *   ?limit=               – records per page (default: 50, max: 200)
@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
 
     // ── Paginated list ──────────────────────────────────────────────────────
     const search  = searchParams.get("search");
-    const status  = searchParams.get("status") ?? "action-required";
+    const status  = searchParams.get("status") ?? "not-paid";
     const country = searchParams.get("country");
     const page    = Math.max(1, Number(searchParams.get("page")  ?? 1));
     const limit   = Math.min(200, Math.max(1, Number(searchParams.get("limit") ?? 50)));
@@ -66,12 +66,14 @@ export async function GET(req: NextRequest) {
     }
 
     // Status filter
-    if (status === "action-required") {
-      conditions.push(
-        "t.status NOT IN ('Completed','Deposited','Paid','Cancelled','Cancel')",
-      );
-    } else if (status === "processed") {
-      conditions.push("t.status IN ('Completed','Deposited','Paid')");
+    if (status === "not-paid") {
+      conditions.push("t.status != 'Deposited'");
+    } else if (status === "in-progress") {
+      conditions.push("t.status = 'Processed'");
+    } else if (status === "paid") {
+      conditions.push("t.status = 'Deposited'");
+    } else if (status === "action-required") {
+      conditions.push("t.status = 'Pending'");
     }
     // status === "all" → no condition
 
