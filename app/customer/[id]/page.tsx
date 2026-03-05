@@ -279,6 +279,7 @@ export default function CustomerProfilePage({
       const fill = (str: string) =>
         str
           .replace(/\{\{fullName\}\}/g, customer.full_name ?? "")
+          .replace(/\{\{customerName\}\}/g, customer.full_name ?? "")
           .replace(/\{\{country\}\}/g, customer.country ?? "");
       if (activeTab === "SMS") {
         setSmsMessage(fill(tpl.body));

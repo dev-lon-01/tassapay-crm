@@ -497,7 +497,10 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
       const tpl = templates.find((t) => String(t.id) === templateId);
       if (!tpl) return;
       const fill = (str: string) =>
-        str.replace(/\{\{fullName\}\}/g, lead.full_name ?? "").replace(/\{\{country\}\}/g, lead.country ?? "");
+        str
+          .replace(/\{\{fullName\}\}/g, lead.full_name ?? "")
+          .replace(/\{\{customerName\}\}/g, lead.full_name ?? "")
+          .replace(/\{\{country\}\}/g, lead.country ?? "");
       if (activeTab === "SMS")   { setSmsMessage(fill(tpl.body)); }
       else if (activeTab === "Email") {
         setEmailBody(fill(tpl.body));
