@@ -844,45 +844,57 @@ function LeadCard({ lead, onClick, onEdit }: { lead: Lead; onClick: () => void; 
   );
 }
 
+// ─── Stage state type ────────────────────────────────────────────────────────
+
+type StageState = {
+  leads: Lead[];
+  page: number;
+  total: number;
+  hasMore: boolean;
+  loading: boolean;
+  loadingMore: boolean;
+};
+
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function LeadsPage() {
   const router = useRouter();
   const { user } = useAuth();
 
-  const [leads, setLeads]           = useState<Lead[]>([]);
-  const [agents, setAgents]         = useState<Agent[]>([]);
-  const [loading, setLoading]       = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalLeads, setTotalLeads]   = useState(0);
-  const [hasMore, setHasMore]         = useState(false);
-  const [search, setSearch]         = useState("");
-  const [filterCountry, setFilterCountry] = useState("");
-  const [filterAgent, setFilterAgent]     = useState("all");
-  const [filterLabels, setFilterLabels]   = useState<string[]>([]);
-  const [allLabels, setAllLabels]         = useState<string[]>([]);
-  const [showCreate, setShowCreate]   = useState(false);
-  const [showBulk, setShowBulk]       = useState(false);
-  const [editingLead, setEditingLead] = useState<Lead | null>(null);
+  const initialStageState = (): StageState => ({
+    leads: [], page: 1, total: 0, hasMore: false, loading: true, loadingMore: false,
+  });
+
+  const [stages, setStages] = useState<Record<LeadStage, StageState>>({
+    "New":       initialStageState(),
+    "Contacted": initialStageState(),
+    "Follow-up": initialStageState(),
+    "Dead":      initialStageState(),
+  });
+  const [agents, setAgents]                   = useState<Agent[]>([]);
+  const [search, setSearch]                   = useState("");
+  const [filterCountry, setFilterCountry]     = useState("");
+  const [filterAgent, setFilterAgent]         = useState("all");
+  const [filterLabels, setFilterLabels]       = useState<string[]>([]);
+  const [allLabels, setAllLabels]             = useState<string[]>([]);
+  const [showCreate, setShowCreate]           = useState(false);
+  const [showBulk, setShowBulk]               = useState(false);
+  const [editingLead, setEditingLead]         = useState<Lead | null>(null);
   const { setQueue } = useLeadsQueue();
 
   const isAdmin = user?.role === "Admin";
 
-  // Derive unique countries from loaded leads
-  const countries = [...new Set(leads.map((l) => l.country).filter(Boolean) as string[])].sort();
-
-  const loadLeads = useCallback(async (page = 1, append = false) => {
-    if (!append) setLoading(true);
-    else setLoadingMore(true);
-
-    const qp = new URLSearchParams({ limit: "50", page: String(page) });
+  const loadStage = useCallback(async (stage: LeadStage, page = 1, append = false) => {
+    setStages((prev) => ({
+      ...prev,
+      [stage]: { ...prev[stage], loading: !append, loadingMore: append },
+    }));
+    const qp = new URLSearchParams({ stage, limit: "10", page: String(page) });
     if (filterCountry) qp.set("country", filterCountry);
     if (filterAgent !== "all") qp.set("assigned_agent", filterAgent);
     if (search) qp.set("search", search);
     if (filterLabels.length) qp.set("labels", filterLabels.join(","));
-    qp.set("show_dead", "1");
-
+    if (stage === "Dead") qp.set("show_dead", "1");
     try {
       const res  = await apiFetch(`/api/leads?${qp}`);
       const data = await res.json();
@@ -890,23 +902,28 @@ export default function LeadsPage() {
         ...r,
         labels: typeof r.labels === "string" ? JSON.parse(r.labels) : (r.labels ?? []),
       }));
-
-      setLeads((prev) => {
-        const next = append ? [...prev, ...rows] : rows;
-        const lblSet = new Set<string>();
-        next.forEach((l) => getLabels(l).forEach((lbl) => lblSet.add(lbl)));
-        setAllLabels([...lblSet].sort());
-        setQueue(next.map((r) => r.customer_id));
-        return next;
-      });
-      setTotalLeads(data.total ?? rows.length);
-      setHasMore(page < (data.pages ?? 1));
-      setCurrentPage(page);
-    } finally {
-      setLoading(false);
-      setLoadingMore(false);
+      setStages((prev) => ({
+        ...prev,
+        [stage]: {
+          leads:      append ? [...prev[stage].leads, ...rows] : rows,
+          page,
+          total:      data.total ?? rows.length,
+          hasMore:    page < (data.pages ?? 1),
+          loading:    false,
+          loadingMore: false,
+        },
+      }));
+    } catch {
+      setStages((prev) => ({
+        ...prev,
+        [stage]: { ...prev[stage], loading: false, loadingMore: false },
+      }));
     }
   }, [filterCountry, filterAgent, search, filterLabels]);
+
+  const loadAll = useCallback(() => {
+    for (const stage of STAGES) loadStage(stage, 1, false);
+  }, [loadStage]);
 
   useEffect(() => {
     apiFetch("/api/users")
@@ -916,19 +933,26 @@ export default function LeadsPage() {
   }, []);
 
   useEffect(() => {
-    const t = setTimeout(loadLeads, 300);
+    const t = setTimeout(loadAll, 300);
     return () => clearTimeout(t);
-  }, [loadLeads]);
+  }, [loadAll]);
 
-  // Group by stage
-  const byStage: Record<LeadStage, Lead[]> = {
-    "New":       leads.filter((l) => (l.lead_stage ?? "New") === "New"),
-    "Contacted": leads.filter((l) => l.lead_stage === "Contacted"),
-    "Follow-up": leads.filter((l) => l.lead_stage === "Follow-up"),
-    "Dead":      leads.filter((l) => l.lead_stage === "Dead"),
-  };
+  // Sync queue + allLabels whenever any stage's leads change
+  useEffect(() => {
+    const allLeads = STAGES.flatMap((s) => stages[s].leads);
+    setQueue(allLeads.map((l) => l.customer_id));
+    const lblSet = new Set<string>();
+    allLeads.forEach((l) => getLabels(l).forEach((lbl) => lblSet.add(lbl)));
+    setAllLabels([...lblSet].sort());
+  }, [stages, setQueue]);
 
-  const totalActive = byStage["New"].length + byStage["Contacted"].length + byStage["Follow-up"].length;
+  // Derive unique countries from all loaded leads
+  const countries = [...new Set(
+    STAGES.flatMap((s) => stages[s].leads).map((l) => l.country).filter(Boolean) as string[]
+  )].sort();
+
+  const totalActive = stages["New"].total + stages["Contacted"].total + stages["Follow-up"].total;
+  const totalLeads  = STAGES.reduce((sum, s) => sum + stages[s].total, 0);
 
   return (
     <div className="flex h-full flex-col">
@@ -1048,74 +1072,69 @@ export default function LeadsPage() {
             </div>
           )}
 
-          <button onClick={() => loadLeads()} title="Refresh" className="ml-auto rounded-xl border border-slate-200 p-2 hover:bg-slate-50">
+          <button onClick={() => loadAll()} title="Refresh" className="ml-auto rounded-xl border border-slate-200 p-2 hover:bg-slate-50">
             <RefreshCw size={14} className="text-slate-500" />
           </button>
         </div>
       </div>
 
       {/* ── Kanban Board ──────────────────────────────────────────────────── */}
-      {loading ? (
-        <div className="flex flex-1 items-center justify-center gap-2 text-slate-400">
-          <Loader2 size={22} className="animate-spin" />
-          <span className="text-sm">Loading leads…</span>
-        </div>
-      ) : (
-        <div className="flex flex-1 gap-4 overflow-x-auto p-4 md:p-6">
-          {STAGES.map((stage) => {
-            const stageLeads = byStage[stage];
-            return (
-              <div key={stage} className="flex w-72 flex-shrink-0 flex-col rounded-2xl border border-slate-100 bg-slate-50">
-                {/* Column header */}
-                <div className={`flex items-center justify-between rounded-t-2xl px-4 py-3 text-white ${STAGE_HEADER[stage]}`}>
-                  <div className="flex items-center gap-2">
-                    <span className={`h-2 w-2 rounded-full bg-white/60`} />
-                    <span className="text-sm font-bold">{stage}</span>
-                  </div>
-                  <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs font-bold">
-                    {stageLeads.length}
-                  </span>
+      <div className="flex flex-1 gap-4 overflow-x-auto p-4 md:p-6">
+        {STAGES.map((stage) => {
+          const { leads: stageLeads, loading, loadingMore, hasMore, total, page } = stages[stage];
+          return (
+            <div key={stage} className="flex w-72 flex-shrink-0 flex-col rounded-2xl border border-slate-100 bg-slate-50">
+              {/* Column header */}
+              <div className={`flex items-center justify-between rounded-t-2xl px-4 py-3 text-white ${STAGE_HEADER[stage]}`}>
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-white/60" />
+                  <span className="text-sm font-bold">{stage}</span>
                 </div>
-
-                {/* Cards */}
-                <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-3">
-                  {stageLeads.length === 0 ? (
-                    <div className="flex flex-1 items-center justify-center py-8 text-sm text-slate-300">
-                      No leads
-                    </div>
-                  ) : (
-                    stageLeads.map((lead) => (
-                      <LeadCard
-                        key={lead.customer_id}
-                        lead={lead}
-                        onClick={() => router.push(`/leads/${lead.customer_id}`)}
-                        onEdit={() => setEditingLead(lead)}
-                      />
-                    ))
-                  )}
-                </div>
+                <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs font-bold">{total}</span>
               </div>
-            );
-          })}
-        </div>
-      )}
 
-      {/* ── Load More ──────────────────────────────────────────────────────── */}
-      {!loading && hasMore && (
-        <div className="flex justify-center border-t border-slate-100 bg-white px-4 py-4">
-          <button
-            onClick={() => loadLeads(currentPage + 1, true)}
-            disabled={loadingMore}
-            className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 shadow-sm hover:bg-slate-50 disabled:opacity-50"
-          >
-            {loadingMore ? (
-              <><Loader2 size={14} className="animate-spin" /> Loading…</>
-            ) : (
-              <>Load More <span className="ml-1 text-slate-400">({leads.length} of {totalLeads})</span></>
-            )}
-          </button>
-        </div>
-      )}
+              {/* Cards */}
+              <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-3">
+                {loading ? (
+                  <div className="flex flex-1 items-center justify-center py-8 text-slate-300">
+                    <Loader2 size={20} className="animate-spin" />
+                  </div>
+                ) : stageLeads.length === 0 ? (
+                  <div className="flex flex-1 items-center justify-center py-8 text-sm text-slate-300">
+                    No leads
+                  </div>
+                ) : (
+                  stageLeads.map((lead) => (
+                    <LeadCard
+                      key={lead.customer_id}
+                      lead={lead}
+                      onClick={() => router.push(`/leads/${lead.customer_id}`)}
+                      onEdit={() => setEditingLead(lead)}
+                    />
+                  ))
+                )}
+              </div>
+
+              {/* Per-column Load More */}
+              {!loading && hasMore && (
+                <div className="border-t border-slate-100 p-2">
+                  <button
+                    onClick={() => loadStage(stage, page + 1, true)}
+                    disabled={loadingMore}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-semibold text-slate-500 hover:bg-slate-100 disabled:opacity-50 transition"
+                  >
+                    {loadingMore ? (
+                      <><Loader2 size={12} className="animate-spin" /> Loading…</>
+                    ) : (
+                      <>Load More <span className="text-slate-400">({stageLeads.length} of {total})</span></>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
 
       {/* ── Modals ─────────────────────────────────────────────────────────── */}
       {showCreate && (
@@ -1124,7 +1143,11 @@ export default function LeadsPage() {
           existingLabels={allLabels}
           onClose={() => setShowCreate(false)}
           onCreated={(lead) => {
-            setLeads((prev) => [lead, ...prev]);
+            const stage = (lead.lead_stage ?? "New") as LeadStage;
+            setStages((prev) => ({
+              ...prev,
+              [stage]: { ...prev[stage], leads: [lead, ...prev[stage].leads], total: prev[stage].total + 1 },
+            }));
             setShowCreate(false);
           }}
         />
@@ -1133,7 +1156,7 @@ export default function LeadsPage() {
       {showBulk && (
         <BulkImportModal
           onClose={() => setShowBulk(false)}
-          onImported={() => loadLeads()}
+          onImported={() => loadAll()}
         />
       )}
 
@@ -1144,11 +1167,15 @@ export default function LeadsPage() {
           existingLabels={allLabels}
           onClose={() => setEditingLead(null)}
           onUpdated={(updated) => {
-            setLeads((prev) =>
-              prev.map((l) =>
-                l.customer_id === updated.customer_id ? { ...l, ...updated } : l
-              )
-            );
+            setStages((prev) => {
+              const next = { ...prev } as Record<LeadStage, StageState>;
+              for (const s of STAGES) {
+                next[s] = { ...prev[s], leads: prev[s].leads.map((l) =>
+                  l.customer_id === updated.customer_id ? { ...l, ...updated } : l
+                )};
+              }
+              return next;
+            });
             setEditingLead(null);
           }}
         />

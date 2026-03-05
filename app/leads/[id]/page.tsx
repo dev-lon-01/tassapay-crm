@@ -412,7 +412,7 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
     NOTE_PLACEHOLDER,
     ...(dbNoteOutcomes.length > 0
       ? dbNoteOutcomes
-      : ["General Note","Spoke with Lead","Left Voicemail","Left SMS","Interested","Not Interested","Follow-up Scheduled"]),
+      : ["Left Voicemail","Requested Callback","Number Disconnected","Not Interested","Sent WhatsApp Info","Invalid Details"]),
   ];
 
   const [lead, setLead]         = useState<LeadProfile | null>(null);
@@ -427,7 +427,7 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
   const [emailSubject, setEmailSubject] = useState("");
   const [emailBody, setEmailBody]       = useState("");
   const [noteOutcome, setNoteOutcome]   = useState(NOTE_PLACEHOLDER);
-  const [noteText, setNoteText]         = useState("");
+
   const [sending, setSending]           = useState(false);
 
   const [templates, setTemplates]               = useState<ApiTemplate[]>([]);
@@ -573,12 +573,12 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
         const res = await apiFetch("/api/interactions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ customerId: params.id, agentId: user?.id ?? null, type: "Note", outcome: noteOutcome, note: noteText.trim() }),
+          body: JSON.stringify({ customerId: params.id, agentId: user?.id ?? null, type: "Note", outcome: noteOutcome, note: noteOutcome }),
         });
         if (res.ok) {
           const interaction: ApiInteraction = await res.json();
           setTimeline((prev) => [interaction, ...prev]);
-          setNoteOutcome(NOTE_PLACEHOLDER); setNoteText("");
+          setNoteOutcome(NOTE_PLACEHOLDER);
           setToast({ message: "Note saved!", type: "success" });
         }
       }
@@ -593,7 +593,7 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
     sending ||
     (activeTab === "SMS"   && (!smsTo.trim() || !smsMessage.trim())) ||
     (activeTab === "Email" && (!emailTo.trim() || !emailSubject.trim() || !emailBody.trim())) ||
-    (activeTab === "Note"  && (noteOutcome === NOTE_PLACEHOLDER || !noteText.trim()));
+    (activeTab === "Note"  && noteOutcome === NOTE_PLACEHOLDER);
 
   const isCallActive = callState !== "idle" && callerInfo === (lead?.full_name ?? smsTo);
   const smsTemplates   = templates.filter((t) => t.channel === "SMS");
@@ -848,9 +848,6 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
                 className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-600 outline-none focus:border-indigo-400">
                 {NOTE_OUTCOMES.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
-              <textarea value={noteText} onChange={(e) => setNoteText(e.target.value)}
-                placeholder="Add a note (optional)…" rows={4}
-                className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
             </div>
           )}
 

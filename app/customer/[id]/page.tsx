@@ -181,8 +181,7 @@ export default function CustomerProfilePage({
     NOTE_PLACEHOLDER,
     ...(dbNoteOutcomes.length > 0
       ? dbNoteOutcomes
-      : ["General Note","Spoke with Customer","Left Voicemail","Left SMS",
-         "ID Verified","Escalated to Compliance","Follow-up Scheduled"]),
+      : ["Left Voicemail","Requested Callback","Number Disconnected","Not Interested","Sent WhatsApp Info","Invalid Details"]),
   ];
 
   const focusPosition = queuePosition(params.id);
@@ -198,7 +197,6 @@ export default function CustomerProfilePage({
   const [emailSubject, setEmailSubject] = useState("");
   const [emailBody, setEmailBody] = useState("");
   const [noteOutcome, setNoteOutcome] = useState(NOTE_PLACEHOLDER);
-  const [noteText, setNoteText] = useState("");
   const [sending, setSending] = useState(false);
   const [focusOutcome, setFocusOutcome] = useState<string>(FOCUS_PLACEHOLDER);
   const [focusNote, setFocusNote] = useState("");
@@ -367,14 +365,13 @@ export default function CustomerProfilePage({
             agentId: user?.id ?? null,
             type: "Note",
             outcome: noteOutcome,
-            note: noteText.trim(),
+            note: noteOutcome,
           }),
         });
         if (res.ok) {
           const interaction: ApiInteraction = await res.json();
           setTimeline((prev) => [interaction, ...prev]);
           setNoteOutcome(NOTE_PLACEHOLDER);
-          setNoteText("");
           setToast({ message: "Note saved!", type: "success" });
         }
       }
@@ -452,7 +449,7 @@ export default function CustomerProfilePage({
     (activeTab === "SMS" && (!smsTo.trim() || !smsMessage.trim())) ||
     (activeTab === "Email" && (!emailTo.trim() || !emailSubject.trim() || !emailBody.trim())) ||
     (activeTab === "Note" &&
-      (noteOutcome === NOTE_PLACEHOLDER || !noteText.trim()));
+      (noteOutcome === NOTE_PLACEHOLDER));
 
   if (loading) {
     return (
@@ -925,18 +922,6 @@ export default function CustomerProfilePage({
                   </option>
                 ))}
               </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600">
-                Notes
-              </label>
-              <textarea
-                rows={3}
-                value={noteText}
-                onChange={(e) => setNoteText(e.target.value)}
-                placeholder="Add details about this interaction…"
-                className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-400"
-              />
             </div>
           </div>
         )}
