@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, Loader2, Search, SearchX } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Loader2, Search, SearchX } from "lucide-react";
 import { apiFetch } from "@/src/lib/apiFetch";
 
 // ─── types ────────────────────────────────────────────────────────────────────
@@ -37,6 +37,7 @@ interface Filters {
   search: string;
   status: string;
   country: string;
+  slaFilter: string; // "" | "late_standard" | "late_somalia"
 }
 
 // ─── country flags ────────────────────────────────────────────────────────────
@@ -139,15 +140,16 @@ function StatusBadge({ status }: { status: string | null }) {
 interface FilterBarProps {
   filters: Filters;
   onChange: (key: keyof Filters, value: string) => void;
+  onSlaFilter: (sla: string) => void;
   countries: string[];
 }
 
-function FilterBar({ filters, onChange, countries }: FilterBarProps) {
+function FilterBar({ filters, onChange, onSlaFilter, countries }: FilterBarProps) {
   const selectCls =
     "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100";
   return (
-    <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
-      <div className="relative mb-3">
+    <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm space-y-3">
+      <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         <input
           type="text"
@@ -157,10 +159,10 @@ function FilterBar({ filters, onChange, countries }: FilterBarProps) {
           className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-4 text-sm text-slate-700 shadow-sm placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
         />
       </div>
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-2">
+      <div className="grid grid-cols-2 gap-2">
         <select
           value={filters.status}
-          onChange={(e) => onChange("status", e.target.value)}
+          onChange={(e) => { onChange("status", e.target.value); onChange("slaFilter", ""); }}
           className={selectCls}
         >
           <option value="not-paid">Not Paid</option>
@@ -181,6 +183,32 @@ function FilterBar({ filters, onChange, countries }: FilterBarProps) {
             </option>
           ))}
         </select>
+      </div>
+      {/* SLA Quick Filters */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+          <AlertTriangle className="h-3.5 w-3.5" /> SLA Alerts
+        </span>
+        <button
+          onClick={() => onSlaFilter(filters.slaFilter === "late_standard" ? "" : "late_standard")}
+          className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+            filters.slaFilter === "late_standard"
+              ? "border-amber-500 bg-amber-500 text-white shadow-sm"
+              : "border-amber-300 bg-white text-amber-700 hover:bg-amber-50"
+          }`}
+        >
+          ⚠️ Late Transfers (&gt; 24 Hrs)
+        </button>
+        <button
+          onClick={() => onSlaFilter(filters.slaFilter === "late_somalia" ? "" : "late_somalia")}
+          className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+            filters.slaFilter === "late_somalia"
+              ? "border-red-500 bg-red-500 text-white shadow-sm"
+              : "border-red-300 bg-white text-red-700 hover:bg-red-50"
+          }`}
+        >
+          🚨 Late Somalia (&gt; 15 Mins)
+        </button>
       </div>
     </div>
   );
@@ -384,10 +412,21 @@ export default function TransfersPage() {
     search: "",
     status: "not-paid",
     country: "All",
+    slaFilter: "",
   });
 
   function updateFilter(key: keyof Filters, value: string) {
     setFilters((prev) => ({ ...prev, [key]: value }));
+    setCurrentPage(1);
+  }
+
+  function applySlaFilter(sla: string) {
+    // Activating an SLA filter overrides the status dropdown to prevent conflicts
+    setFilters((prev) => ({
+      ...prev,
+      slaFilter: sla,
+      status: sla ? "all" : prev.status,
+    }));
     setCurrentPage(1);
   }
 
@@ -410,6 +449,7 @@ export default function TransfersPage() {
         if (filters.search.trim()) params.set("search", filters.search.trim());
         params.set("page", String(currentPage));
         params.set("limit", String(LIMIT));
+        if (filters.slaFilter) params.set("sla_filter", filters.slaFilter);
 
         apiFetch(`/api/transfers?${params}`)
           .then((r) => r.json())
@@ -437,7 +477,7 @@ export default function TransfersPage() {
         </p>
       </div>
 
-      <FilterBar filters={filters} onChange={updateFilter} countries={countries} />
+      <FilterBar filters={filters} onChange={updateFilter} onSlaFilter={applySlaFilter} countries={countries} />
 
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-16 text-slate-400">

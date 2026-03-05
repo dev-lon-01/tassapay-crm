@@ -15,6 +15,7 @@ import type { RowDataPacket } from "mysql2";
  *   ?search=              – LIKE on transaction_ref, data_field_id, full_name, email, phone_number
  *   ?status=              – "not-paid" (default) | "in-progress" | "paid" | "action-required" | "all"
  *   ?country=             – exact match on transfers.destination_country
+ *   ?sla_filter=          – "late_standard" (>24 h, non-paid) | "late_somalia" (Somalia, >15 min, non-paid)
  *   ?page=                – page number (default: 1)
  *   ?limit=               – records per page (default: 50, max: 200)
  *   ?distinct_countries=1 – returns distinct destination_country array (for dropdown)
@@ -49,12 +50,13 @@ export async function GET(req: NextRequest) {
     }
 
     // ── Paginated list ──────────────────────────────────────────────────────
-    const search  = searchParams.get("search");
-    const status  = searchParams.get("status") ?? "not-paid";
-    const country = searchParams.get("country");
-    const page    = Math.max(1, Number(searchParams.get("page")  ?? 1));
-    const limit   = Math.min(200, Math.max(1, Number(searchParams.get("limit") ?? 50)));
-    const offset  = (page - 1) * limit;
+    const search    = searchParams.get("search");
+    const status    = searchParams.get("status") ?? "not-paid";
+    const country   = searchParams.get("country");
+    const slaFilter = searchParams.get("sla_filter"); // "late_standard" | "late_somalia"
+    const page      = Math.max(1, Number(searchParams.get("page")  ?? 1));
+    const limit     = Math.min(200, Math.max(1, Number(searchParams.get("limit") ?? 50)));
+    const offset    = (page - 1) * limit;
 
     const conditions: string[] = [];
     const params: (string | number)[] = [];
@@ -65,22 +67,34 @@ export async function GET(req: NextRequest) {
       params.push(...fence.params);
     }
 
-    // Status filter
-    if (status === "not-paid") {
-      conditions.push("t.status != 'Deposited'");
-    } else if (status === "in-progress") {
-      conditions.push("t.status = 'Processed'");
-    } else if (status === "paid") {
-      conditions.push("t.status = 'Deposited'");
-    } else if (status === "action-required") {
-      conditions.push("t.status = 'Pending'");
-    }
-    // status === "all" → no condition
+    // SLA filters override status — backend enforces in-progress + time threshold
+    if (slaFilter === "late_standard") {
+      // Non-paid transfers older than 24 hours
+      conditions.push("t.status NOT IN ('Deposited', 'Completed', 'Paid', 'Cancelled', 'Rejected')");
+      conditions.push("t.created_at < DATE_SUB(NOW(), INTERVAL 24 HOUR)");
+    } else if (slaFilter === "late_somalia") {
+      // Somalia transfers older than 15 minutes still in-progress
+      conditions.push("t.status NOT IN ('Deposited', 'Completed', 'Paid', 'Cancelled', 'Rejected')");
+      conditions.push("t.destination_country = 'Somalia'");
+      conditions.push("t.created_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE)");
+    } else {
+      // Normal status filter
+      if (status === "not-paid") {
+        conditions.push("t.status != 'Deposited'");
+      } else if (status === "in-progress") {
+        conditions.push("t.status = 'Processed'");
+      } else if (status === "paid") {
+        conditions.push("t.status = 'Deposited'");
+      } else if (status === "action-required") {
+        conditions.push("t.status = 'Pending'");
+      }
+      // status === "all" → no condition
 
-    // Destination country filter
-    if (country) {
-      conditions.push("t.destination_country = ?");
-      params.push(country);
+      // Destination country filter (skipped in SLA mode — backend already pins Somalia)
+      if (country) {
+        conditions.push("t.destination_country = ?");
+        params.push(country);
+      }
     }
 
     // Omni-search
