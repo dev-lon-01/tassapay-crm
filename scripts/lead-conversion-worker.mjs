@@ -1,8 +1,8 @@
 /**
  * lead-conversion-worker.mjs
  *
- * Hourly cron worker that automatically converts Leads to full Customers
- * when they meet either conversion criterion:
+ * Long-running cron worker (PM2-managed) that automatically converts Leads
+ * to full Customers when they meet either conversion criterion:
  *
  *   A) Phone / email matches an existing TassaPay customer (is_lead = 0)
  *      that has at least one successful transfer.
@@ -13,26 +13,42 @@
  *   • Sets lead_stage = 'Converted', is_lead = 0
  *   • Inserts a System interaction: "Lead automatically converted after first successful transfer."
  *
- * Run: node scripts/lead-conversion-worker.mjs
- * Cron: 0 * * * *   (every hour)
+ * PM2: pm2 start scripts/lead-conversion-worker.mjs --name lead-conversion-worker --interpreter node
+ * Cron: 0 * * * *   (every hour, via internal node-cron)
  */
 
-import { createConnection } from "mysql2/promise";
-import { config } from "dotenv";
+import { createRequire } from "module";
+import { readFileSync } from "fs";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
 
-config({ path: ".env.local" });
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const require   = createRequire(import.meta.url);
+
+// ── Load .env.local ───────────────────────────────────────────────────────────
+const dotenv = require("dotenv");
+dotenv.config({ path: resolve(__dirname, "../.env.local") });
+
+// ── CJS imports ───────────────────────────────────────────────────────────────
+const cron  = require("node-cron");
+const mysql = require("mysql2/promise");
 
 const PAID_STATUSES = ["paid", "deposited", "Paid", "Deposited", "Processed", "Completed", "completed"];
 
+// ── Persistent connection pool ────────────────────────────────────────────────
+const pool = mysql.createPool({
+  host:            process.env.DB_HOST     ?? "localhost",
+  port:            Number(process.env.DB_PORT ?? 3306),
+  user:            process.env.DB_USER     ?? "root",
+  password:        process.env.DB_PASSWORD ?? "",
+  database:        process.env.DB_NAME     ?? "tassapay_crm",
+  timezone:        "Z",
+  waitForConnections: true,
+  connectionLimit:    5,
+});
+
 async function run() {
-  const conn = await createConnection({
-    host:     process.env.DB_HOST     ?? "localhost",
-    port:     Number(process.env.DB_PORT ?? 3306),
-    user:     process.env.DB_USER     ?? "root",
-    password: process.env.DB_PASSWORD ?? "",
-    database: process.env.DB_NAME     ?? "tassapay_crm",
-    timezone: "Z",
-  });
+  const conn = await pool.getConnection();
 
   try {
     console.log(`[${new Date().toISOString()}] Lead conversion worker starting…`);
@@ -129,12 +145,23 @@ async function run() {
 
     console.log(`\n  Summary: ${converted} lead(s) converted out of ${leads.length} checked.`);
     console.log(`[${new Date().toISOString()}] Worker finished.\n`);
+  } catch (err) {
+    console.error("[lead-conversion-worker] Error in run():", err.message);
   } finally {
-    await conn.end();
+    conn.release();
   }
 }
 
-run().catch((err) => {
-  console.error("[lead-conversion-worker] Fatal error:", err.message);
-  process.exit(1);
+// ── Cron: every hour ──────────────────────────────────────────────────────────
+cron.schedule("0 * * * *", async () => {
+  try {
+    await run();
+  } catch (err) {
+    console.error("[lead-conversion-worker] Fatal error in cron tick:", err);
+  }
 });
+
+console.log("[lead-conversion-worker] Started — running every hour (0 * * * *)");
+
+// Run immediately on startup so we don't wait an hour for the first check
+run().catch((err) => console.error("[lead-conversion-worker] Startup run failed:", err.message));
