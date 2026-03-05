@@ -211,8 +211,11 @@ export function AppNavigation() {
 
       {/* ── Desktop sidebar (unchanged) ───────────────────────────────── */}
       <aside className="fixed bottom-0 top-[73px] hidden w-64 px-3 pb-3 md:block">
-        <div className="flex h-full flex-col">
-          <nav className="h-full space-y-2 rounded-3xl border border-slate-200/70 bg-white/85 p-3 shadow-xl shadow-slate-900/5 backdrop-blur-xl">
+        <div className="flex h-full flex-col rounded-3xl border border-slate-200/70 bg-white/85 shadow-xl shadow-slate-900/5 backdrop-blur-xl">
+          {/* Scrollable nav links — hidden scrollbar */}
+          <nav
+            className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
             <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
               Navigation
             </p>
@@ -274,24 +277,25 @@ export function AppNavigation() {
                 })}
               </>
             )}
-
-            <div className="mt-auto space-y-2">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Workspace
-                </p>
-                <p className="mt-1 text-sm font-medium text-slate-800">TassaPay Operations</p>
-                <p className="text-xs text-slate-500">EU + UK Region</p>
-              </div>
-              <button
-                onClick={logout}
-                className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-rose-50 hover:text-rose-600"
-              >
-                <LogOut className="h-4 w-4" />
-                <span>Log out</span>
-              </button>
-            </div>
           </nav>
+
+          {/* Pinned footer — always visible */}
+          <div className="shrink-0 space-y-2 border-t border-slate-100 p-3">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Workspace
+              </p>
+              <p className="mt-1 text-sm font-medium text-slate-800">TassaPay Operations</p>
+              <p className="text-xs text-slate-500">EU + UK Region</p>
+            </div>
+            <button
+              onClick={logout}
+              className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-rose-50 hover:text-rose-600"
+            >
+              <LogOut className="h-4 w-4" />
+              <span>Log out</span>
+            </button>
+          </div>
         </div>
       </aside>
     </>
