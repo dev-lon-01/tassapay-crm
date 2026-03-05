@@ -81,22 +81,24 @@ function CallSettingsPopover({
         </button>
       </div>
 
-      {/* Audio Output */}
-      <div className="mb-3">
-        <label className="mb-1.5 block text-xs font-medium text-slate-500">
-          Audio Output (Speaker / Headset)
-        </label>
-        <select
-          value={selectedOutput}
-          onChange={(e) => onOutputChange(e.target.value)}
-          className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-300"
-        >
-          <option value="">System Default</option>
-          {audioOutputs.map((d) => (
-            <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
-          ))}
-        </select>
-      </div>
+      {/* Audio Output — hidden on iOS (setSinkId unsupported, audioOutputs=[]) */}
+      {audioOutputs.length > 0 && (
+        <div className="mb-3">
+          <label className="mb-1.5 block text-xs font-medium text-slate-500">
+            Audio Output (Speaker / Headset)
+          </label>
+          <select
+            value={selectedOutput}
+            onChange={(e) => onOutputChange(e.target.value)}
+            className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+          >
+            <option value="">System Default</option>
+            {audioOutputs.map((d) => (
+              <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Microphone */}
       <div className="mb-4">

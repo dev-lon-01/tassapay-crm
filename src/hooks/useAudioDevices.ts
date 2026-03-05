@@ -17,6 +17,10 @@ export interface AudioDevice {
  * Labels are only populated AFTER microphone permission has been granted
  * (i.e. after the Twilio Device has been initialised and permissions accepted).
  * Call `refresh()` at that point if you need the labelled list immediately.
+ *
+ * iOS / Safari: setSinkId is not supported, so audioOutputs is always []
+ * on those platforms. The CallWidget should hide the output selector when
+ * this list is empty.
  */
 export function useAudioDevices() {
   const [audioOutputs, setAudioOutputs] = useState<AudioDevice[]>([]);
@@ -24,12 +28,18 @@ export function useAudioDevices() {
 
   const enumerate = useCallback(async () => {
     if (typeof navigator === "undefined" || !navigator.mediaDevices?.enumerateDevices) return;
+    // setSinkId is unsupported on iOS/Safari — skip output enumeration entirely
+    const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+    const isIOS = /iPad|iPhone|iPod/.test(ua) ||
+      (ua.includes("Mac") && "ontouchend" in document);
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
       setAudioOutputs(
-        devices
-          .filter((d) => d.kind === "audiooutput")
-          .map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Speaker ${i + 1}` }))
+        isIOS
+          ? []   // hide output selector on iOS — setSinkId throws
+          : devices
+              .filter((d) => d.kind === "audiooutput")
+              .map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Speaker ${i + 1}` }))
       );
       setAudioInputs(
         devices
