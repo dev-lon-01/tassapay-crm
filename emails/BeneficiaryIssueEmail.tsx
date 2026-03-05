@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Heading, Hr, Section, Text } from "@react-email/components";
-import { BaseLayout } from "./BaseLayout";
+import { EmailLayout } from "./EmailLayout";
 
 export interface BeneficiaryIssueEmailProps {
   customerName: string;
@@ -60,7 +60,7 @@ export function BeneficiaryIssueEmail({
   amount,
 }: BeneficiaryIssueEmailProps) {
   return (
-    <BaseLayout
+    <EmailLayout
       preview={`Action Required: Issue with your TassaPay transfer ${transferId}`}
     >
       <Heading style={heading}>
@@ -105,6 +105,6 @@ export function BeneficiaryIssueEmail({
         <br />
         The TassaPay Team
       </Text>
-    </BaseLayout>
+    </EmailLayout>
   );
 }

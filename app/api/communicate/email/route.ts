@@ -3,6 +3,7 @@ import { Resend } from "resend";
 import { pool } from "@/src/lib/db";
 import { requireAuth } from "@/src/lib/auth";
 import { BeneficiaryIssueEmail } from "@/emails/BeneficiaryIssueEmail";
+import { GeneralEmail } from "@/emails/GeneralEmail";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
 
 /**
@@ -95,13 +96,7 @@ export async function POST(req: NextRequest) {
           from: FROM,
           to: [email],
           subject: subject.trim(),
-          text: message.trim(),
-          html: `<p style="font-family:sans-serif;white-space:pre-wrap;line-height:1.6">${message
-            .trim()
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/\n/g, "<br/>")}</p>`,
+          react: GeneralEmail({ subject: subject.trim(), message: message.trim() }),
         };
 
     const { data, error: sendError } = await resend.emails.send(sendPayload);
