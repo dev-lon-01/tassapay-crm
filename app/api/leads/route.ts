@@ -43,8 +43,12 @@ export async function GET(req: NextRequest) {
   const params: (string | number)[] = [];
 
   if (stage && stage !== "all") {
-    conditions.push("lead_stage = ?");
-    params.push(stage);
+    if (stage === "New") {
+      conditions.push("(lead_stage IS NULL OR lead_stage = 'New')");
+    } else {
+      conditions.push("lead_stage = ?");
+      params.push(stage);
+    }
   } else if (!showDead) {
     conditions.push("(lead_stage IS NULL OR lead_stage != 'Dead')");
   }
