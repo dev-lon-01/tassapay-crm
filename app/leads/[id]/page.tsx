@@ -6,12 +6,14 @@ import {
   ArrowLeft, Mail, Phone, MapPin, Calendar, AtSign, FileText,
   AlertCircle, Loader2, MessageSquare, Send, CheckCircle, XCircle,
   Mic, MicOff, PhoneOff, PlayCircle, Tag, ChevronDown, User,
+  ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { normalizePhone } from "@/src/lib/phoneUtils";
 import { apiFetch } from "@/src/lib/apiFetch";
 import { useTwilioVoice } from "@/src/context/TwilioVoiceContext";
 import { useAuth } from "@/src/context/AuthContext";
 import { useDropdowns } from "@/src/context/DropdownsContext";
+import { useLeadsQueue } from "@/src/context/LeadsQueueContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -129,6 +131,10 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
   const { makeCall, callState, callerInfo, callDuration, isMuted, toggleMute, hangUp } = useTwilioVoice();
   const { user } = useAuth();
   const { noteOutcomes: dbNoteOutcomes } = useDropdowns();
+  const { queue } = useLeadsQueue();
+  const currentIdx = queue.indexOf(params.id);
+  const prevId = currentIdx > 0 ? queue[currentIdx - 1] : null;
+  const nextId = currentIdx !== -1 && currentIdx < queue.length - 1 ? queue[currentIdx + 1] : null;
 
   const NOTE_OUTCOMES = [
     NOTE_PLACEHOLDER,
@@ -142,7 +148,7 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
   const [loading, setLoading]   = useState(true);
   const [notFound, setNotFound] = useState(false);
 
-  const [activeTab, setActiveTab]       = useState<LoggerTab>("SMS");
+  const [activeTab, setActiveTab]       = useState<LoggerTab>("Note");
   const [smsTo, setSmsTo]               = useState("");
   const [emailTo, setEmailTo]           = useState("");
   const [smsMessage, setSmsMessage]     = useState("");
@@ -327,11 +333,33 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
         </div>
       )}
 
-      {/* Back button */}
-      <button onClick={() => router.push("/leads")}
-        className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-900">
-        <ArrowLeft size={16} /> Back to Pipeline
-      </button>
+      {/* Back button + Prev/Next navigation */}
+      <div className="flex items-center justify-between gap-4">
+        <button onClick={() => router.push("/leads")}
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-900">
+          <ArrowLeft size={16} /> Back to Pipeline
+        </button>
+
+        {queue.length > 0 && currentIdx !== -1 && (
+          <div className="flex items-center gap-2">
+            <button
+              disabled={!prevId}
+              onClick={() => prevId && router.push(`/leads/${prevId}`)}
+              className="flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft size={13} /> Prev
+            </button>
+            <span className="text-xs text-slate-400">{currentIdx + 1} / {queue.length}</span>
+            <button
+              disabled={!nextId}
+              onClick={() => nextId && router.push(`/leads/${nextId}`)}
+              className="flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Next <ChevronRight size={13} />
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* ── Lead Profile Card ─────────────────────────────────────────────── */}
       <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">

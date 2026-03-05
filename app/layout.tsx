@@ -4,6 +4,7 @@ import { AuthProvider } from "@/src/context/AuthContext";
 import { QueueProvider } from "@/src/context/QueueContext";
 import { TwilioVoiceProvider } from "@/src/context/TwilioVoiceContext";
 import { DropdownsProvider } from "@/src/context/DropdownsContext";
+import { LeadsQueueProvider } from "@/src/context/LeadsQueueContext";
 import { AppShell } from "@/src/components/AppShell";
 
 export const metadata: Metadata = {
@@ -23,7 +24,9 @@ export default function RootLayout({
           <QueueProvider>
             <TwilioVoiceProvider>
               <DropdownsProvider>
-                <AppShell>{children}</AppShell>
+                <LeadsQueueProvider>
+                  <AppShell>{children}</AppShell>
+                </LeadsQueueProvider>
               </DropdownsProvider>
             </TwilioVoiceProvider>
           </QueueProvider>

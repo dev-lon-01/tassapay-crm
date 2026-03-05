@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
   const auth = requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
-  let body: { name?: string; phone?: string; country?: string; assigned_agent_id?: number | null };
+  let body: { name?: string; phone?: string; country?: string; email?: string | null; assigned_agent_id?: number | null; labels?: string[] };
   try {
     body = await req.json();
   } catch {
@@ -151,9 +151,17 @@ export async function POST(req: NextRequest) {
 
     await pool.execute(
       `INSERT INTO customers
-         (customer_id, full_name, phone_number, country, assigned_agent_id, is_lead, lead_stage, created_at, synced_at)
-       VALUES (?, ?, ?, ?, ?, 1, 'New', NOW(), NOW())`,
-      [customerId, name.trim(), phoneNorm, country.trim(), assigned_agent_id ?? null]
+         (customer_id, full_name, phone_number, email, country, assigned_agent_id, is_lead, lead_stage, labels, created_at, synced_at)
+       VALUES (?, ?, ?, ?, ?, ?, 1, 'New', ?, NOW(), NOW())`,
+      [
+        customerId,
+        name.trim(),
+        phoneNorm,
+        body.email?.trim() || null,
+        country.trim(),
+        assigned_agent_id ?? null,
+        body.labels?.length ? JSON.stringify(body.labels) : null,
+      ]
     );
 
     // Fetch the created record
