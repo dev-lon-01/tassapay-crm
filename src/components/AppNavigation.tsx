@@ -25,6 +25,7 @@ const navItems: NavItem[] = [
   { label: "Templates",   href: "/templates",    icon: FileText },
   { label: "Automations", href: "/automations",  icon: Bot },
   { label: "Activity",    href: "/activity",     icon: Activity },
+  { label: "Dropdowns",   href: "/settings/dropdowns", icon: ListFilter },
 ];
 
 const adminItems: NavItem[] = [
@@ -32,7 +33,6 @@ const adminItems: NavItem[] = [
   { label: "Team",      href: "/team",                 icon: UsersRound  },
   { label: "Sync",      href: "/sync",                 icon: RefreshCw   },
   { label: "Alerts",    href: "/settings/alerts",      icon: Bell        },
-  { label: "Dropdowns", href: "/settings/dropdowns",   icon: ListFilter  },
 ];
 
 // Rule of 4: only 3 primary links + "More" button on mobile

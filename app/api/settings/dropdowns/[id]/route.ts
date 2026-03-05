@@ -16,10 +16,6 @@ export async function PUT(
   const auth = requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
-  if (auth.role !== "Admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
   const id = Number(params.id);
   if (!Number.isInteger(id) || id < 1) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });

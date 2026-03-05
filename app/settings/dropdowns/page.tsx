@@ -239,14 +239,6 @@ export default function DropdownsPage() {
 
   useEffect(() => { fetchItems(); }, [fetchItems]);
 
-  if (user?.role !== "Admin") {
-    return (
-      <div className="flex flex-col items-center justify-center gap-2 pt-20 text-slate-400">
-        <ListFilter size={40} />
-        <p className="text-sm font-semibold">Admin access required</p>
-      </div>
-    );
-  }
 
   const tabItems = items
     .filter((i) => i.category === tab)

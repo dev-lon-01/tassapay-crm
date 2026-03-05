@@ -20,8 +20,8 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const category        = searchParams.get("category");
-  // ?includeInactive=1 is Admin-only — lets the settings page see toggled-off items
-  const includeInactive = searchParams.get("includeInactive") === "1" && auth.role === "Admin";
+  // ?includeInactive=1 lets the settings page see toggled-off items
+  const includeInactive = searchParams.get("includeInactive") === "1";
 
   const clauses: string[] = [];
   const params: (string | number)[] = [];
@@ -55,10 +55,6 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const auth = requireAuth(req);
   if (auth instanceof NextResponse) return auth;
-
-  if (auth.role !== "Admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
 
   let body: { category?: string; label?: string; sort_order?: number };
   try {
