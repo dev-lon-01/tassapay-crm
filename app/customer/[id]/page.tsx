@@ -189,6 +189,7 @@ export default function CustomerProfilePage({
   const [timeline, setTimeline] = useState<ApiInteraction[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [expandedNotes, setExpandedNotes] = useState<Set<number>>(new Set());
 
   const [activeTab, setActiveTab] = useState<LoggerTab>("SMS");
   const [smsTo, setSmsTo] = useState("");
@@ -1116,9 +1117,31 @@ export default function CustomerProfilePage({
                         ← Inbound SMS
                       </span>
                     )}
-                    <p className="mt-0.5 whitespace-pre-wrap text-sm leading-relaxed text-slate-500">
-                      {item.note ?? ""}
-                    </p>
+                    {(() => {
+                      const note = item.note ?? "";
+                      const LIMIT = 200;
+                      const isLong = note.length > LIMIT;
+                      const expanded = expandedNotes.has(item.id);
+                      return (
+                        <div>
+                          <p className="mt-0.5 whitespace-pre-wrap text-sm leading-relaxed text-slate-500">
+                            {isLong && !expanded ? note.slice(0, LIMIT) + "…" : note}
+                          </p>
+                          {isLong && (
+                            <button
+                              onClick={() => setExpandedNotes((prev) => {
+                                const next = new Set(prev);
+                                expanded ? next.delete(item.id) : next.add(item.id);
+                                return next;
+                              })}
+                              className="mt-1 text-xs font-medium text-indigo-500 hover:text-indigo-700"
+                            >
+                              {expanded ? "View less" : "View more"}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()}
                     {item.type === "Call" && item.call_duration_seconds != null && (
                       <p className="mt-1 text-xs text-slate-400">
                         Duration: {formatDuration(item.call_duration_seconds)}
