@@ -19,7 +19,7 @@ interface EmailLayoutProps {
   children: React.ReactNode;
 }
 
-const DOMAIN = "https://tassapay.co.uk";
+const DOMAIN = "https://crm.tassapay.com";
 
 // ── Styles ───────────────────────────────────────────────────────────────────
 
@@ -30,9 +30,10 @@ const main: React.CSSProperties = {
 };
 
 const headerSection: React.CSSProperties = {
-  backgroundColor: "#222c67",
+  backgroundColor: "#ffffff",
   padding: "20px 40px",
   textAlign: "center",
+  borderBottom: "3px solid #dcb050",
 };
 
 const container: React.CSSProperties = {
