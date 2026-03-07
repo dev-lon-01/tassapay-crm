@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
 
   const token = new AccessToken(accountSid, apiKey, apiSecret, {
     identity,
-    ttl: 3600,
+    ttl: 60 * 60 * 8,
   });
 
   const grant = new VoiceGrant({

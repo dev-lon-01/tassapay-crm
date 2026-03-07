@@ -173,6 +173,7 @@ export function CallWidget() {
   }
 
   const hasMicError = deviceError === "MIC_BLOCKED";
+  const hasConnectionError = !!deviceError && !hasMicError;
   const visible = callState !== "idle" || hasMicError || (!hasMicError && !deviceReady === false);
   // Show the ready/starting pill whenever call is idle and no mic error
   const showReadyPill = callState === "idle" && !hasMicError;
@@ -220,6 +221,15 @@ export function CallWidget() {
           <AlertTriangle size={15} className="mt-0.5 flex-shrink-0 text-amber-500" />
           <span>
             <strong>Microphone blocked.</strong> To make calls, click the camera/lock icon in your browser address bar and allow microphone access, then refresh the page.
+          </span>
+        </div>
+      )}
+
+      {hasConnectionError && (
+        <div className="mb-2 flex items-start gap-2 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-xs text-red-700 shadow-md">
+          <AlertTriangle size={15} className="mt-0.5 flex-shrink-0 text-red-500" />
+          <span>
+            <strong>Connection Lost.</strong> Voice calling is currently offline. The system will try to recover automatically.
           </span>
         </div>
       )}

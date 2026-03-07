@@ -20,6 +20,7 @@ interface CustomerHit {
 }
 
 type LookupStatus = "loading" | "matched" | "unmatched";
+type CallLogStatus = "loading" | "ready" | "missing";
 
 export function PostCallModal() {
   const { lastEndedCall, clearLastEndedCall } = useTwilioVoice();
@@ -52,6 +53,8 @@ export function PostCallModal() {
   const [note, setNote]       = useState("");
   const [saving, setSaving]   = useState(false);
   const [error, setError]     = useState<string | null>(null);
+  const [interactionId, setInteractionId] = useState<number | null>(null);
+  const [callLogStatus, setCallLogStatus] = useState<CallLogStatus>("loading");
 
   // ── Auto-lookup on modal open ────────────────────────────────────────────
   useEffect(() => {
@@ -64,6 +67,8 @@ export function PostCallModal() {
     setSearchQuery("");
     setSearchResults([]);
     setShowDropdown(false);
+    setInteractionId(null);
+    setCallLogStatus(lastEndedCall.callSid ? "loading" : "missing");
 
     // If context already knows the customer (outbound from dialler), use it
     if (lastEndedCall.customerId) {
@@ -93,6 +98,52 @@ export function PostCallModal() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastEndedCall]);
+
+  // ── Wait for the server-side webhook log to exist ─────────────────────────
+  useEffect(() => {
+    if (!lastEndedCall?.callSid) {
+      setCallLogStatus("missing");
+      setInteractionId(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function waitForCallLog() {
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        try {
+          const res = await apiFetch(`/api/interactions?twilio_call_sid=${encodeURIComponent(lastEndedCall.callSid!)}`);
+          if (res.ok) {
+            const data = await res.json() as { id: number; customer_id?: string | null };
+            if (!cancelled) {
+              setInteractionId(data.id);
+              setCallLogStatus("ready");
+              if (data.customer_id && !resolvedCustomerId) {
+                setResolvedCustomerId(data.customer_id);
+              }
+            }
+            return;
+          }
+        } catch {
+          // retry below
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+
+      if (!cancelled) {
+        setCallLogStatus("missing");
+      }
+    }
+
+    waitForCallLog().catch(() => {
+      if (!cancelled) setCallLogStatus("missing");
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [lastEndedCall, resolvedCustomerId]);
 
   // ── Debounced autocomplete search ────────────────────────────────────────
   function handleSearchChange(q: string) {
@@ -134,6 +185,10 @@ export function PostCallModal() {
   // ── Save ─────────────────────────────────────────────────────────────────
   async function handleSave() {
     if (!lastEndedCall || outcome === OUTCOMES[0]) return;
+    if (!interactionId && !lastEndedCall.callSid) {
+      setError("Call log is still being created. Please try again in a moment.");
+      return;
+    }
     if (!resolvedCustomerId) {
       setError("Please select a customer before saving.");
       return;
@@ -142,12 +197,12 @@ export function PostCallModal() {
     setError(null);
     try {
       const res = await apiFetch("/api/interactions", {
-        method: "POST",
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          id:                    interactionId,
           customerId:            resolvedCustomerId,
           agentId:               user?.id ?? null,
-          type:                  "Call",
           outcome,
           note:                  note.trim() || null,
           twilio_call_sid:       lastEndedCall.callSid,
@@ -215,6 +270,19 @@ export function PostCallModal() {
             <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2.5 text-xs text-slate-500">
               <Loader2 size={13} className="animate-spin" />
               Looking up caller…
+            </div>
+          )}
+
+          {callLogStatus === "loading" && (
+            <div className="flex items-center gap-2 rounded-lg bg-indigo-50 px-3 py-2.5 text-xs text-indigo-600">
+              <Loader2 size={13} className="animate-spin" />
+              Finalising server-side call log…
+            </div>
+          )}
+
+          {callLogStatus === "missing" && (
+            <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+              Waiting for the server-side call log. Please try again in a few seconds.
             </div>
           )}
 
@@ -322,7 +390,7 @@ export function PostCallModal() {
           </button>
           <button
             onClick={handleSave}
-            disabled={saving || outcome === OUTCOMES[0] || lookupStatus === "loading" || !resolvedCustomerId}
+            disabled={saving || outcome === OUTCOMES[0] || lookupStatus === "loading" || callLogStatus !== "ready" || !resolvedCustomerId}
             className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
           >
             {saving ? (

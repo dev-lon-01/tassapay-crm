@@ -65,6 +65,7 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
   const activeCallPhoneRef       = useRef<string | null>(null);
   const activeCallDirectionRef   = useRef<"inbound" | "outbound">("inbound");
   const ringAudioRef             = useRef<HTMLAudioElement | null>(null);
+  const availabilityRef          = useRef<boolean | null>(null);
 
   const [callState, setCallState]         = useState<CallState>("idle");
   const [callerInfo, setCallerInfo]       = useState<string | null>(null);
@@ -79,6 +80,18 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
     callerInfoRef.current = info;
     setCallerInfo(info);
   }
+
+  const setVoiceAvailability = useCallback((available: boolean) => {
+    if (!authToken) return;
+    if (availabilityRef.current === available) return;
+    availabilityRef.current = available;
+    apiFetch("/api/voice/available", {
+      method: "PATCH",
+      body: JSON.stringify({ available }),
+    }).catch(() => {
+      availabilityRef.current = null;
+    });
+  }, [authToken]);
 
   // ─── Ring audio helpers ─────────────────────────────────────────────────────
   function startRing() {
@@ -146,6 +159,8 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
       if (sid) callSidRef.current = sid;
       setCallState("active");
       setIsMuted(false);
+      setDeviceError(null);
+      setVoiceAvailability(false);
       startTimer();
     });
 
@@ -184,10 +199,7 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
       });
 
       // Mark agent available again
-      apiFetch("/api/voice/available", {
-        method: "PATCH",
-        body: JSON.stringify({ available: true }),
-      }).catch(() => {});
+      setVoiceAvailability(true);
     });
 
     call.on("cancel", () => {
@@ -202,11 +214,13 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
       setCallState("idle");
       updateCallerInfo(null);
       setCallDuration(0);
+      setVoiceAvailability(true);
     });
 
     call.on("error", (err: Error) => {
       stopRing();
       setDeviceError(err.message);
+      setVoiceAvailability(false);
     });
   }
 
@@ -222,6 +236,15 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
     }
   }
 
+  async function refreshTokenWithRetry(attempts = 3): Promise<string | null> {
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      const token = await fetchToken();
+      if (token) return token;
+      await new Promise((resolve) => setTimeout(resolve, attempt * 750));
+    }
+    return null;
+  }
+
   // ─── Device init ───────────────────────────────────────────────────────────
   useEffect(() => {
     // Don't initialize until the user is authenticated
@@ -230,7 +253,7 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
     let destroyed = false;
 
     async function init() {
-      const token = await fetchToken();
+      const token = await refreshTokenWithRetry();
       if (!token || destroyed) return;
 
       // Lazy-import the SDK (browser-only)
@@ -257,14 +280,13 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
             (device.audio as any)?.setInputDevice?.(savedInput).catch(() => {});
           }
         }
-        apiFetch("/api/voice/available", {
-          method: "PATCH",
-          body: JSON.stringify({ available: true }),
-        }).catch(() => {});
+        setVoiceAvailability(true);
       });
 
       device.on("unregistered", () => {
         setDeviceReady(false);
+        setVoiceAvailability(false);
+        if (!destroyed) setDeviceError("Connection Lost");
       });
 
       device.on("error", (err: Error) => {
@@ -274,14 +296,23 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
         } else {
           setDeviceError(msg);
         }
+        setVoiceAvailability(false);
+      });
+
+      (device as unknown as { on?: (event: string, handler: () => void) => void }).on?.("offline", () => {
+        setDeviceReady(false);
+        setDeviceError("Connection Lost");
+        setVoiceAvailability(false);
       });
 
       device.on("incoming", async (call: Call) => {
         const from = call.parameters?.From ?? "";
         setCallState("incoming");
+        setDeviceError(null);
         updateCallerInfo(from || "Unknown Caller");
         activeCallPhoneRef.current = from || null;
         activeCallDirectionRef.current = "inbound";
+        setVoiceAvailability(false);
         startRing();
         attachCallListeners(call);
 
@@ -301,31 +332,58 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
       });
 
       device.on("tokenWillExpire", async () => {
-        const newToken = await fetchToken();
-        if (newToken) device.updateToken(newToken);
+        const newToken = await refreshTokenWithRetry();
+        if (newToken) {
+          device.updateToken(newToken);
+          setDeviceError(null);
+        } else {
+          setDeviceError("Connection Lost");
+        }
       });
 
       device.register();
     }
 
-    init().catch(() => {});
+    function handleBrowserOffline() {
+      setDeviceReady(false);
+      setDeviceError("Connection Lost");
+      setVoiceAvailability(false);
+    }
+
+    function handleBrowserOnline() {
+      setDeviceError(null);
+      if (deviceRef.current) {
+        deviceRef.current.register();
+      }
+    }
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("offline", handleBrowserOffline);
+      window.addEventListener("online", handleBrowserOnline);
+    }
+
+    init().catch(() => {
+      setDeviceReady(false);
+      setDeviceError("Connection Lost");
+      setVoiceAvailability(false);
+    });
 
     return () => {
       destroyed = true;
       stopTimer();
       stopRing();
+      if (typeof window !== "undefined") {
+        window.removeEventListener("offline", handleBrowserOffline);
+        window.removeEventListener("online", handleBrowserOnline);
+      }
       if (deviceRef.current) {
-        // Mark unavailable before destroying
-        apiFetch("/api/voice/available", {
-          method: "PATCH",
-          body: JSON.stringify({ available: false }),
-        }).catch(() => {});
+        setVoiceAvailability(false);
         deviceRef.current.destroy();
         deviceRef.current = null;
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authToken]);
+  }, [authToken, router, setVoiceAvailability]);
 
   // ─── Public API ─────────────────────────────────────────────────────────────
 
@@ -335,6 +393,8 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
     activeCallPhoneRef.current = phoneNumber;
     activeCallDirectionRef.current = "outbound";
     setCallState("connecting");
+    setDeviceError(null);
+    setVoiceAvailability(false);
     updateCallerInfo(displayName ?? phoneNumber);
 
     deviceRef.current
@@ -346,9 +406,10 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
         setCallState("idle");
         updateCallerInfo(null);
         setDeviceError(err.message);
+        setVoiceAvailability(true);
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [callState]);
+  }, [callState, setVoiceAvailability]);
 
   const acceptCall = useCallback(() => {
     if (activeCallRef.current && callState === "incoming") {
@@ -364,9 +425,10 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
       updateCallerInfo(null);
       activeCallCustomerIdRef.current = null;
       activeCallRef.current = null;
+      setVoiceAvailability(true);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [callState]);
+  }, [callState, setVoiceAvailability]);
 
   const hangUp = useCallback(() => {
     if (activeCallRef.current) {

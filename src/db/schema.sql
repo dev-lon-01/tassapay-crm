@@ -92,7 +92,8 @@ CREATE TABLE IF NOT EXISTS `interactions` (
     FOREIGN KEY (`agent_id`) REFERENCES `users` (`id`)
     ON DELETE SET NULL ON UPDATE CASCADE,
   INDEX `idx_interactions_customer` (`customer_id`),
-  INDEX `idx_interactions_agent`    (`agent_id`)
+  INDEX `idx_interactions_agent`    (`agent_id`),
+  INDEX `idx_call_sid`              (`twilio_call_sid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ─── sync_log (API pull history) ──────────────────────────────────────────────
