@@ -107,12 +107,14 @@ export function PostCallModal() {
       return;
     }
 
+    const callSid = lastEndedCall.callSid;
+
     let cancelled = false;
 
     async function waitForCallLog() {
       for (let attempt = 0; attempt < 12; attempt += 1) {
         try {
-          const res = await apiFetch(`/api/interactions?twilio_call_sid=${encodeURIComponent(lastEndedCall.callSid!)}`);
+          const res = await apiFetch(`/api/interactions?twilio_call_sid=${encodeURIComponent(callSid)}`);
           if (res.ok) {
             const data = await res.json() as { id: number; customer_id?: string | null };
             if (!cancelled) {

@@ -148,7 +148,7 @@ export async function POST(req: NextRequest) {
     params["ParentCallSid"] ?? "",
     params["DialCallSid"] ?? "",
     params["RecordingCallSid"] ?? "",
-  ].filter(Boolean);
+  ].filter((value): value is string => Boolean(value));
 
   const from = params["From"] ?? params["Caller"] ?? "";
   const to = params["To"] ?? params["Called"] ?? "";
