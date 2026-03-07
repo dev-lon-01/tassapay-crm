@@ -1,10 +1,9 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef } from "react";
 import { Phone, X, Loader2, Search, CheckCircle2, PhoneIncoming, PhoneOutgoing } from "lucide-react";
 import { useTwilioVoice } from "@/src/context/TwilioVoiceContext";
 import { useDropdowns } from "@/src/context/DropdownsContext";
-import { useAuth } from "@/src/context/AuthContext";
 import { apiFetch } from "@/src/lib/apiFetch";
 
 function formatDuration(secs: number): string {
@@ -25,10 +24,9 @@ type CallLogStatus = "loading" | "ready" | "missing";
 export function PostCallModal() {
   const { lastEndedCall, clearLastEndedCall } = useTwilioVoice();
   const { callOutcomes } = useDropdowns();
-  const { user } = useAuth();
 
   const OUTCOMES = [
-    "Select outcome…",
+    "Select outcomeâ€¦",
     ...(callOutcomes.length > 0
       ? callOutcomes
       : ["Spoke with Customer", "No Answer", "Left Voicemail", "Left SMS",
@@ -36,19 +34,19 @@ export function PostCallModal() {
          "Not Interested", "Wrong Number", "Escalated to Compliance"]),
   ];
 
-  // ── Resolved customer state ──────────────────────────────────────────────
+  // â”€â”€ Resolved customer state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [lookupStatus, setLookupStatus]             = useState<LookupStatus>("loading");
   const [resolvedCustomerId, setResolvedCustomerId] = useState<string | null>(null);
   const [resolvedName, setResolvedName]             = useState<string | null>(null);
 
-  // ── Autocomplete search state ────────────────────────────────────────────
+  // â”€â”€ Autocomplete search state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [searchQuery, setSearchQuery]       = useState("");
   const [searchResults, setSearchResults]   = useState<CustomerHit[]>([]);
   const [searchLoading, setSearchLoading]   = useState(false);
   const [showDropdown, setShowDropdown]     = useState(false);
   const searchDebounce                      = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Form state ───────────────────────────────────────────────────────────
+  // â”€â”€ Form state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [outcome, setOutcome] = useState(OUTCOMES[0]);
   const [note, setNote]       = useState("");
   const [saving, setSaving]   = useState(false);
@@ -56,7 +54,7 @@ export function PostCallModal() {
   const [interactionId, setInteractionId] = useState<number | null>(null);
   const [callLogStatus, setCallLogStatus] = useState<CallLogStatus>("loading");
 
-  // ── Auto-lookup on modal open ────────────────────────────────────────────
+  // â”€â”€ Auto-lookup on modal open â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     if (!lastEndedCall) return;
 
@@ -99,7 +97,7 @@ export function PostCallModal() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastEndedCall]);
 
-  // ── Wait for the server-side webhook log to exist ─────────────────────────
+  // â”€â”€ Wait for the server-side webhook log to exist â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     if (!lastEndedCall?.callSid) {
       setCallLogStatus("missing");
@@ -147,7 +145,7 @@ export function PostCallModal() {
     };
   }, [lastEndedCall, resolvedCustomerId]);
 
-  // ── Debounced autocomplete search ────────────────────────────────────────
+  // â”€â”€ Debounced autocomplete search â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   function handleSearchChange(q: string) {
     setSearchQuery(q);
     setResolvedCustomerId(null);
@@ -184,7 +182,7 @@ export function PostCallModal() {
     setShowDropdown(false);
   }
 
-  // ── Save ─────────────────────────────────────────────────────────────────
+  // â”€â”€ Save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function handleSave() {
     if (!lastEndedCall || outcome === OUTCOMES[0]) return;
     if (!interactionId && !lastEndedCall.callSid) {
@@ -204,7 +202,6 @@ export function PostCallModal() {
         body: JSON.stringify({
           id:                    interactionId,
           customerId:            resolvedCustomerId,
-          agentId:               user?.id ?? null,
           outcome,
           note:                  note.trim() || null,
           twilio_call_sid:       lastEndedCall.callSid,
@@ -249,9 +246,9 @@ export function PostCallModal() {
                 <DirectionIcon size={11} />
                 {directionLabel}
                 {lastEndedCall.durationSeconds > 0
-                  ? ` · ${formatDuration(lastEndedCall.durationSeconds)}`
+                  ? ` Â· ${formatDuration(lastEndedCall.durationSeconds)}`
                   : ""}
-                {lastEndedCall.phone ? ` · ${lastEndedCall.phone}` : ""}
+                {lastEndedCall.phone ? ` Â· ${lastEndedCall.phone}` : ""}
               </p>
             </div>
           </div>
@@ -267,18 +264,18 @@ export function PostCallModal() {
         {/* Body */}
         <div className="space-y-4 p-5">
 
-          {/* ── Customer identification area ── */}
+          {/* â”€â”€ Customer identification area â”€â”€ */}
           {lookupStatus === "loading" && (
             <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2.5 text-xs text-slate-500">
               <Loader2 size={13} className="animate-spin" />
-              Looking up caller…
+              Looking up callerâ€¦
             </div>
           )}
 
           {callLogStatus === "loading" && (
             <div className="flex items-center gap-2 rounded-lg bg-indigo-50 px-3 py-2.5 text-xs text-indigo-600">
               <Loader2 size={13} className="animate-spin" />
-              Finalising server-side call log…
+              Finalising server-side call logâ€¦
             </div>
           )}
 
@@ -301,7 +298,7 @@ export function PostCallModal() {
           {lookupStatus === "unmatched" && (
             <div className="space-y-2">
               <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
-                Unknown caller — search to link to a customer profile
+                Unknown caller â€” search to link to a customer profile
               </div>
               {/* Autocomplete */}
               <div className="relative">
@@ -312,7 +309,7 @@ export function PostCallModal() {
                     value={searchQuery}
                     onChange={(e) => handleSearchChange(e.target.value)}
                     onFocus={() => searchResults.length > 0 && setShowDropdown(true)}
-                    placeholder="Search name or customer ID…"
+                    placeholder="Search name or customer IDâ€¦"
                     className="w-full text-sm text-slate-800 placeholder-slate-400 focus:outline-none bg-transparent"
                   />
                   {searchLoading && <Loader2 size={13} className="animate-spin text-slate-400 shrink-0" />}
@@ -376,7 +373,7 @@ export function PostCallModal() {
               rows={3}
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="Any additional context…"
+              placeholder="Any additional contextâ€¦"
               className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-400"
             />
           </div>
@@ -398,7 +395,7 @@ export function PostCallModal() {
             {saving ? (
               <>
                 <Loader2 size={14} className="animate-spin" />
-                Saving…
+                Savingâ€¦
               </>
             ) : (
               "Save Log"
@@ -410,4 +407,6 @@ export function PostCallModal() {
     </div>
   );
 }
+
+
 

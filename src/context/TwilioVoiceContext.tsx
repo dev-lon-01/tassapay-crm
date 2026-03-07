@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   createContext,
@@ -13,9 +13,8 @@ import type { Call, Device } from "@twilio/voice-sdk";
 import { apiFetch } from "@/src/lib/apiFetch";
 import { useAuth } from "@/src/context/AuthContext";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
 export type CallState = "idle" | "connecting" | "active" | "incoming";
+export type ConnectionState = "starting" | "ready" | "lost" | "mic-blocked";
 
 export interface EndedCall {
   callSid: string | null;
@@ -26,8 +25,19 @@ export interface EndedCall {
   direction: "inbound" | "outbound";
 }
 
+interface VoiceTokenResponse {
+  token: string;
+  identity: string;
+  ttlSeconds: number;
+  expiresAt: number;
+  heartbeatIntervalSeconds: number;
+  agentTtlSeconds: number;
+}
+
 interface TwilioVoiceContextValue {
   callState: CallState;
+  connectionState: ConnectionState;
+  connectionMessage: string | null;
   callerInfo: string | null;
   callDuration: number;
   isMuted: boolean;
@@ -42,58 +52,82 @@ interface TwilioVoiceContextValue {
   sendDigits: (digits: string) => void;
   clearLastEndedCall: () => void;
   setOutputDevice: (deviceId: string) => void;
-  setInputDevice:  (deviceId: string) => void;
+  setInputDevice: (deviceId: string) => void;
 }
 
-// ─── Context ──────────────────────────────────────────────────────────────────
-
 const TwilioVoiceContext = createContext<TwilioVoiceContextValue | null>(null);
-
-// ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function TwilioVoiceProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { token: authToken } = useAuth();
 
-  const deviceRef             = useRef<Device | null>(null);
-  const activeCallRef         = useRef<Call | null>(null);
-  const timerRef              = useRef<ReturnType<typeof setInterval> | null>(null);
-  const callDurationRef          = useRef(0);   // parallel ref to avoid stale closures
-  const callSidRef               = useRef<string | null>(null);
-  const callerInfoRef            = useRef<string | null>(null);
-  const activeCallCustomerIdRef  = useRef<string | null>(null);
-  const activeCallPhoneRef       = useRef<string | null>(null);
-  const activeCallDirectionRef   = useRef<"inbound" | "outbound">("inbound");
-  const ringAudioRef             = useRef<HTMLAudioElement | null>(null);
-  const availabilityRef          = useRef<boolean | null>(null);
+  const deviceRef = useRef<Device | null>(null);
+  const activeCallRef = useRef<Call | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const tokenRequestRef = useRef<Promise<VoiceTokenResponse | null> | null>(null);
+  const callDurationRef = useRef(0);
+  const callSidRef = useRef<string | null>(null);
+  const callerInfoRef = useRef<string | null>(null);
+  const activeCallCustomerIdRef = useRef<string | null>(null);
+  const activeCallPhoneRef = useRef<string | null>(null);
+  const activeCallDirectionRef = useRef<"inbound" | "outbound">("inbound");
+  const ringAudioRef = useRef<HTMLAudioElement | null>(null);
+  const availabilityRef = useRef<boolean | null>(null);
+  const heartbeatIntervalMsRef = useRef(20000);
+  const callStateRef = useRef<CallState>("idle");
+  const connectionStateRef = useRef<ConnectionState>("starting");
 
-  const [callState, setCallState]         = useState<CallState>("idle");
-  const [callerInfo, setCallerInfo]       = useState<string | null>(null);
-  const [callDuration, setCallDuration]   = useState(0);
-  const [isMuted, setIsMuted]             = useState(false);
-  const [deviceError, setDeviceError]     = useState<string | null>(null);
-  const [deviceReady, setDeviceReady]     = useState(false);
+  const [callState, setCallState] = useState<CallState>("idle");
+  const [connectionState, setConnectionState] = useState<ConnectionState>("starting");
+  const [connectionMessage, setConnectionMessage] = useState<string | null>(null);
+  const [callerInfo, setCallerInfo] = useState<string | null>(null);
+  const [callDuration, setCallDuration] = useState(0);
+  const [isMuted, setIsMuted] = useState(false);
+  const [deviceError, setDeviceError] = useState<string | null>(null);
+  const [deviceReady, setDeviceReady] = useState(false);
   const [lastEndedCall, setLastEndedCall] = useState<EndedCall | null>(null);
 
-  // ─── Helper: keep callerInfo in sync between ref and state ─────────────────
+  useEffect(() => {
+    callStateRef.current = callState;
+  }, [callState]);
+
+  useEffect(() => {
+    connectionStateRef.current = connectionState;
+  }, [connectionState]);
+
+  const setConnection = useCallback((state: ConnectionState, message: string | null = null) => {
+    setConnectionState(state);
+    setConnectionMessage(message);
+    setDeviceReady(state === "ready");
+    if (state === "mic-blocked") {
+      setDeviceError("MIC_BLOCKED");
+    } else if (state === "ready") {
+      setDeviceError(null);
+    } else {
+      setDeviceError(message ?? null);
+    }
+  }, []);
+
   function updateCallerInfo(info: string | null) {
     callerInfoRef.current = info;
     setCallerInfo(info);
   }
 
-  const setVoiceAvailability = useCallback((available: boolean) => {
+  const updateVoiceAvailability = useCallback((available: boolean, options?: { force?: boolean }) => {
     if (!authToken) return;
-    if (availabilityRef.current === available) return;
+    if (!options?.force && availabilityRef.current === available) return;
     availabilityRef.current = available;
     apiFetch("/api/voice/available", {
       method: "PATCH",
       body: JSON.stringify({ available }),
     }).catch(() => {
-      availabilityRef.current = null;
+      if (available) {
+        availabilityRef.current = null;
+      }
     });
   }, [authToken]);
 
-  // ─── Ring audio helpers ─────────────────────────────────────────────────────
   function startRing() {
     if (typeof window === "undefined") return;
     if (!ringAudioRef.current) {
@@ -103,6 +137,7 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
     ringAudioRef.current.currentTime = 0;
     ringAudioRef.current.play().catch(() => {});
   }
+
   function stopRing() {
     if (ringAudioRef.current) {
       ringAudioRef.current.pause();
@@ -110,15 +145,15 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
     }
   }
 
-  // ─── Timer helpers ──────────────────────────────────────────────────────────
   function startTimer() {
     callDurationRef.current = 0;
     setCallDuration(0);
     timerRef.current = setInterval(() => {
       callDurationRef.current += 1;
-      setCallDuration((s) => s + 1);
+      setCallDuration((seconds) => seconds + 1);
     }, 1000);
   }
+
   function stopTimer() {
     if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -126,7 +161,6 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
     }
   }
 
-  // ─── Screen pop: look up customer by phone number ──────────────────────────
   async function screenPop(fromNumber: string): Promise<string | null> {
     try {
       const encoded = encodeURIComponent(fromNumber);
@@ -139,12 +173,9 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
     }
   }
 
-  // ─── Attach listeners to a Call object ─────────────────────────────────────
   function attachCallListeners(call: Call) {
     activeCallRef.current = call;
 
-    // Early capture — for outbound calls the SID is available on the Call
-    // object immediately, before the `accept` event fires.
     const earlyParams = (call as unknown as { parameters?: Record<string, string> }).parameters;
     if (earlyParams?.CallSid) {
       callSidRef.current = earlyParams.CallSid;
@@ -152,26 +183,21 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
 
     call.on("accept", (acceptedCall: Call) => {
       stopRing();
-      // Capture CallSid — only overwrite if truthy to avoid clobbering early capture
-      const sid =
-        (acceptedCall as unknown as { parameters?: Record<string, string> })
-          .parameters?.CallSid ?? null;
+      const sid = acceptedCall.parameters?.CallSid ?? null;
       if (sid) callSidRef.current = sid;
       setCallState("active");
       setIsMuted(false);
-      setDeviceError(null);
-      setVoiceAvailability(false);
+      updateVoiceAvailability(false);
       startTimer();
     });
 
     call.on("disconnect", () => {
       stopRing();
-      // Snapshot before zeroing — refs stay accurate in the closure
-      const durationSnap  = callDurationRef.current;
-      const callerSnap    = callerInfoRef.current ?? "Unknown";
-      const sidSnap       = callSidRef.current;
-      const cidSnap       = activeCallCustomerIdRef.current;
-      const phoneSnap     = activeCallPhoneRef.current;
+      const durationSnap = callDurationRef.current;
+      const callerSnap = callerInfoRef.current ?? "Unknown";
+      const sidSnap = callSidRef.current;
+      const customerIdSnap = activeCallCustomerIdRef.current;
+      const phoneSnap = activeCallPhoneRef.current;
       const directionSnap = activeCallDirectionRef.current;
 
       stopTimer();
@@ -187,19 +213,14 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
       setIsMuted(false);
       setCallDuration(0);
 
-      // Surface the ended call so PostCallModal can log it
-      console.log("[TwilioVoice] disconnect →", { sidSnap, phoneSnap, directionSnap, durationSnap });
       setLastEndedCall({
         callSid: sidSnap,
         durationSeconds: durationSnap,
         callerInfo: callerSnap,
-        customerId: cidSnap,
+        customerId: customerIdSnap,
         phone: phoneSnap,
         direction: directionSnap,
       });
-
-      // Mark agent available again
-      setVoiceAvailability(true);
     });
 
     call.on("cancel", () => {
@@ -214,64 +235,81 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
       setCallState("idle");
       updateCallerInfo(null);
       setCallDuration(0);
-      setVoiceAvailability(true);
     });
 
     call.on("error", (err: Error) => {
       stopRing();
-      setDeviceError(err.message);
-      setVoiceAvailability(false);
+      setConnection("lost", err.message || "Connection Lost");
+      updateVoiceAvailability(false, { force: true });
     });
   }
 
-  // ─── Token fetch helper ─────────────────────────────────────────────────────
-  async function fetchToken(): Promise<string | null> {
-    try {
-      const res = await apiFetch("/api/voice/token");
-      if (!res.ok) return null;
-      const data = await res.json() as { token: string };
-      return data.token;
-    } catch {
-      return null;
+  const fetchVoiceToken = useCallback(async (): Promise<VoiceTokenResponse | null> => {
+    if (tokenRequestRef.current) {
+      return tokenRequestRef.current;
     }
-  }
 
-  async function refreshTokenWithRetry(attempts = 3): Promise<string | null> {
+    tokenRequestRef.current = (async () => {
+      try {
+        const res = await apiFetch("/api/voice/token");
+        if (!res.ok) return null;
+        const data = await res.json() as VoiceTokenResponse;
+        heartbeatIntervalMsRef.current = Math.max(10000, (data.heartbeatIntervalSeconds || 20) * 1000);
+        return data;
+      } catch {
+        return null;
+      } finally {
+        tokenRequestRef.current = null;
+      }
+    })();
+
+    return tokenRequestRef.current;
+  }, []);
+
+  const refreshTokenWithRetry = useCallback(async (attempts = 3): Promise<VoiceTokenResponse | null> => {
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
-      const token = await fetchToken();
-      if (token) return token;
+      const tokenData = await fetchVoiceToken();
+      if (tokenData) return tokenData;
       await new Promise((resolve) => setTimeout(resolve, attempt * 750));
     }
     return null;
-  }
+  }, [fetchVoiceToken]);
 
-  // ─── Device init ───────────────────────────────────────────────────────────
   useEffect(() => {
-    // Don't initialize until the user is authenticated
-    if (!authToken) return;
+    if (!authToken) {
+      setConnection("starting", null);
+      return;
+    }
 
     let destroyed = false;
 
     async function init() {
-      const token = await refreshTokenWithRetry();
-      if (!token || destroyed) return;
+      setConnection("starting", "Connecting...");
+      const tokenData = await refreshTokenWithRetry();
+      if (!tokenData || destroyed) {
+        if (!destroyed) setConnection("lost", "Connection Lost");
+        return;
+      }
 
-      // Lazy-import the SDK (browser-only)
       const { Device: TwilioDevice } = await import("@twilio/voice-sdk");
+      if (destroyed) return;
 
-      const device = new TwilioDevice(token, {
-        codecPreferences: ["opus", "pcmu"] as any,
-      } as any);
+      const device = new TwilioDevice(tokenData.token, {
+        codecPreferences: ["opus", "pcmu"] as unknown as string[],
+      } as unknown as Record<string, unknown>);
 
       deviceRef.current = device;
 
+      device.on("registering", () => {
+        if (!destroyed) setConnection("starting", "Connecting...");
+      });
+
       device.on("registered", () => {
-        setDeviceReady(true);
-        setDeviceError(null);
-        // Auto-apply saved audio device preferences after permissions are granted
+        if (destroyed) return;
+        setConnection("ready", null);
         if (typeof window !== "undefined") {
           const savedOutput = localStorage.getItem("tp_crm_output_device");
-          const savedInput  = localStorage.getItem("tp_crm_input_device");
+          const savedInput = localStorage.getItem("tp_crm_input_device");
           if (savedOutput) {
             (device.audio as any)?.speakerDevices?.set(savedOutput);
             (device.audio as any)?.ringtoneDevices?.set(savedOutput);
@@ -280,43 +318,47 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
             (device.audio as any)?.setInputDevice?.(savedInput).catch(() => {});
           }
         }
-        setVoiceAvailability(true);
+        if (callStateRef.current === "idle") {
+          updateVoiceAvailability(true, { force: true });
+        }
       });
 
       device.on("unregistered", () => {
-        setDeviceReady(false);
-        setVoiceAvailability(false);
-        if (!destroyed) setDeviceError("Connection Lost");
+        if (destroyed) return;
+        setConnection("lost", "Connection Lost");
+        updateVoiceAvailability(false, { force: true });
       });
 
       device.on("error", (err: Error) => {
-        const msg = err.message ?? String(err);
-        if (msg.includes("NotAllowedError") || msg.includes("Permission denied") || msg.includes("PermissionDeniedError")) {
-          setDeviceError("MIC_BLOCKED");
+        const message = err.message ?? String(err);
+        if (
+          message.includes("NotAllowedError") ||
+          message.includes("Permission denied") ||
+          message.includes("PermissionDeniedError")
+        ) {
+          setConnection("mic-blocked", "Microphone blocked");
         } else {
-          setDeviceError(msg);
+          setConnection("lost", message || "Connection Lost");
         }
-        setVoiceAvailability(false);
+        updateVoiceAvailability(false, { force: true });
       });
 
       (device as unknown as { on?: (event: string, handler: () => void) => void }).on?.("offline", () => {
-        setDeviceReady(false);
-        setDeviceError("Connection Lost");
-        setVoiceAvailability(false);
+        if (destroyed) return;
+        setConnection("lost", "Connection Lost");
+        updateVoiceAvailability(false, { force: true });
       });
 
       device.on("incoming", async (call: Call) => {
         const from = call.parameters?.From ?? "";
         setCallState("incoming");
-        setDeviceError(null);
         updateCallerInfo(from || "Unknown Caller");
         activeCallPhoneRef.current = from || null;
         activeCallDirectionRef.current = "inbound";
-        setVoiceAvailability(false);
+        updateVoiceAvailability(false, { force: true });
         startRing();
         attachCallListeners(call);
 
-        // Screen pop: navigate to customer profile if the number matches
         if (from && !destroyed) {
           const customerId = await screenPop(from);
           if (!destroyed) {
@@ -332,12 +374,14 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
       });
 
       device.on("tokenWillExpire", async () => {
-        const newToken = await refreshTokenWithRetry();
-        if (newToken) {
-          device.updateToken(newToken);
-          setDeviceError(null);
-        } else {
-          setDeviceError("Connection Lost");
+        const refreshed = await refreshTokenWithRetry();
+        if (refreshed && !destroyed) {
+          await device.updateToken(refreshed.token);
+          if (connectionStateRef.current !== "ready" && callStateRef.current === "idle") {
+            device.register();
+          }
+        } else if (!destroyed) {
+          setConnection("lost", "Connection Lost");
         }
       });
 
@@ -345,16 +389,13 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
     }
 
     function handleBrowserOffline() {
-      setDeviceReady(false);
-      setDeviceError("Connection Lost");
-      setVoiceAvailability(false);
+      setConnection("lost", "Connection Lost");
+      updateVoiceAvailability(false, { force: true });
     }
 
     function handleBrowserOnline() {
-      setDeviceError(null);
-      if (deviceRef.current) {
-        deviceRef.current.register();
-      }
+      setConnection("starting", "Reconnecting...");
+      deviceRef.current?.register();
     }
 
     if (typeof window !== "undefined") {
@@ -363,39 +404,69 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
     }
 
     init().catch(() => {
-      setDeviceReady(false);
-      setDeviceError("Connection Lost");
-      setVoiceAvailability(false);
+      if (!destroyed) {
+        setConnection("lost", "Connection Lost");
+        updateVoiceAvailability(false, { force: true });
+      }
     });
 
     return () => {
       destroyed = true;
       stopTimer();
       stopRing();
+      if (heartbeatRef.current) {
+        clearInterval(heartbeatRef.current);
+        heartbeatRef.current = null;
+      }
       if (typeof window !== "undefined") {
         window.removeEventListener("offline", handleBrowserOffline);
         window.removeEventListener("online", handleBrowserOnline);
       }
       if (deviceRef.current) {
-        setVoiceAvailability(false);
+        updateVoiceAvailability(false, { force: true });
         deviceRef.current.destroy();
         deviceRef.current = null;
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authToken, router, setVoiceAvailability]);
+  }, [authToken, refreshTokenWithRetry, router, setConnection, updateVoiceAvailability]);
 
-  // ─── Public API ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
+    }
+
+    const shouldHeartbeat = authToken && connectionState === "ready" && callState === "idle";
+    if (!shouldHeartbeat) {
+      if (authToken) {
+        updateVoiceAvailability(false);
+      }
+      return;
+    }
+
+    updateVoiceAvailability(true, { force: true });
+    heartbeatRef.current = setInterval(() => {
+      updateVoiceAvailability(true, { force: true });
+    }, heartbeatIntervalMsRef.current);
+
+    return () => {
+      if (heartbeatRef.current) {
+        clearInterval(heartbeatRef.current);
+        heartbeatRef.current = null;
+      }
+    };
+  }, [authToken, callState, connectionState, updateVoiceAvailability]);
 
   const makeCall = useCallback((phoneNumber: string, displayName?: string, customerId?: string | null) => {
-    if (!deviceRef.current || callState !== "idle") return;
+    if (!deviceRef.current || callState !== "idle" || connectionState !== "ready") return;
     activeCallCustomerIdRef.current = customerId ?? null;
     activeCallPhoneRef.current = phoneNumber;
     activeCallDirectionRef.current = "outbound";
     setCallState("connecting");
     setDeviceError(null);
-    setVoiceAvailability(false);
+    setConnectionMessage(null);
     updateCallerInfo(displayName ?? phoneNumber);
+    updateVoiceAvailability(false, { force: true });
 
     deviceRef.current
       .connect({ params: { To: phoneNumber } })
@@ -405,11 +476,11 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
       .catch((err: Error) => {
         setCallState("idle");
         updateCallerInfo(null);
-        setDeviceError(err.message);
-        setVoiceAvailability(true);
+        setDeviceError(err.message || "Call failed");
+        setConnectionMessage(err.message || "Call failed");
+        updateVoiceAvailability(false, { force: true });
       });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [callState, setVoiceAvailability]);
+  }, [callState, connectionState, setConnection, updateVoiceAvailability]);
 
   const acceptCall = useCallback(() => {
     if (activeCallRef.current && callState === "incoming") {
@@ -425,10 +496,8 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
       updateCallerInfo(null);
       activeCallCustomerIdRef.current = null;
       activeCallRef.current = null;
-      setVoiceAvailability(true);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [callState, setVoiceAvailability]);
+  }, [callState]);
 
   const hangUp = useCallback(() => {
     if (activeCallRef.current) {
@@ -468,6 +537,8 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
     <TwilioVoiceContext.Provider
       value={{
         callState,
+        connectionState,
+        connectionMessage,
         callerInfo,
         callDuration,
         isMuted,
@@ -490,10 +561,12 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
   );
 }
 
-// ─── Hook ─────────────────────────────────────────────────────────────────────
-
 export function useTwilioVoice(): TwilioVoiceContextValue {
   const ctx = useContext(TwilioVoiceContext);
   if (!ctx) throw new Error("useTwilioVoice must be used inside <TwilioVoiceProvider>");
   return ctx;
 }
+
+
+
+

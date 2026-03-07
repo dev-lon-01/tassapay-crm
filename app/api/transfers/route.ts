@@ -1,39 +1,22 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/src/lib/db";
 import { requireAuth } from "@/src/lib/auth";
+import { jsonError } from "@/src/lib/httpResponses";
 import { buildCountryFence } from "@/src/lib/regionFence";
+import { buildReferenceSearchPatterns, looksLikeTransferReference } from "@/src/lib/searchUtils";
 import type { RowDataPacket } from "mysql2";
 
-/**
- * GET /api/transfers
- *
- * Global transfers list with filtering and pagination.
- * Region-fenced: non-Admin agents only see transfers belonging to
- * customers in their allowed regions (customer origin country).
- *
- * Query params:
- *   ?search=              – LIKE on transaction_ref, data_field_id, full_name, email, phone_number
- *   ?status=              – "not-paid" (default) | "in-progress" | "paid" | "action-required" | "all"
- *   ?country=             – exact match on transfers.destination_country
- *   ?sla_filter=          – "late_standard" (>24 h, non-paid) | "late_somalia" (Somalia, >15 min, non-paid)
- *   ?page=                – page number (default: 1)
- *   ?limit=               – records per page (default: 50, max: 200)
- *   ?distinct_countries=1 – returns distinct destination_country array (for dropdown)
- */
 export async function GET(req: NextRequest) {
   const auth = requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
   try {
     const { searchParams } = new URL(req.url);
-
-    // Region fence applied to customer origin country (c.country)
     const fence = buildCountryFence(
       auth.allowed_regions ?? ["UK", "EU"],
       auth.role === "Admin",
     );
 
-    // ── Distinct destination countries mode (for dropdown) ─────────────────
     if (searchParams.get("distinct_countries") === "1") {
       const fenceClause = fence ? `WHERE c.${fence.sql}` : "";
       const [rows] = await pool.execute<RowDataPacket[]>(
@@ -45,40 +28,34 @@ export async function GET(req: NextRequest) {
         fence?.params ?? [],
       );
       return NextResponse.json(
-        rows.map((r) => r.destination_country as string).filter(Boolean),
+        rows.map((row) => row.destination_country as string).filter(Boolean),
       );
     }
 
-    // ── Paginated list ──────────────────────────────────────────────────────
-    const search    = searchParams.get("search");
-    const status    = searchParams.get("status") ?? "not-paid";
-    const country   = searchParams.get("country");
-    const slaFilter = searchParams.get("sla_filter"); // "late_standard" | "late_somalia"
-    const page      = Math.max(1, Number(searchParams.get("page")  ?? 1));
-    const limit     = Math.min(200, Math.max(1, Number(searchParams.get("limit") ?? 50)));
-    const offset    = (page - 1) * limit;
+    const search = searchParams.get("search");
+    const status = searchParams.get("status") ?? "not-paid";
+    const country = searchParams.get("country");
+    const slaFilter = searchParams.get("sla_filter");
+    const page = Math.max(1, Number(searchParams.get("page") ?? 1));
+    const limit = Math.min(200, Math.max(1, Number(searchParams.get("limit") ?? 50)));
+    const offset = (page - 1) * limit;
 
     const conditions: string[] = [];
     const params: (string | number)[] = [];
 
-    // Region fence
     if (fence) {
       conditions.push(`c.${fence.sql}`);
       params.push(...fence.params);
     }
 
-    // SLA filters override status — backend enforces in-progress + time threshold
     if (slaFilter === "late_standard") {
-      // Non-paid transfers older than 24 hours
       conditions.push("t.status NOT IN ('Deposited', 'Completed', 'Paid', 'Cancelled', 'Rejected')");
       conditions.push("t.created_at < DATE_SUB(NOW(), INTERVAL 24 HOUR)");
     } else if (slaFilter === "late_somalia") {
-      // Somalia transfers older than 15 minutes still in-progress
       conditions.push("t.status NOT IN ('Deposited', 'Completed', 'Paid', 'Cancelled', 'Rejected')");
       conditions.push("t.destination_country = 'Somalia'");
       conditions.push("t.created_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE)");
     } else {
-      // Normal status filter
       if (status === "not-paid") {
         conditions.push("t.status != 'Deposited'");
       } else if (status === "in-progress") {
@@ -88,32 +65,35 @@ export async function GET(req: NextRequest) {
       } else if (status === "action-required") {
         conditions.push("t.status = 'Pending'");
       }
-      // status === "all" → no condition
 
-      // Destination country filter (skipped in SLA mode — backend already pins Somalia)
       if (country) {
         conditions.push("t.destination_country = ?");
         params.push(country);
       }
     }
 
-    // Omni-search
     if (search) {
-      conditions.push(
-        "(t.transaction_ref LIKE ? OR t.data_field_id LIKE ? OR c.full_name LIKE ? OR c.email LIKE ? OR c.phone_number LIKE ?)",
-      );
-      params.push(
-        `%${search}%`,
-        `%${search}%`,
-        `%${search}%`,
-        `%${search}%`,
-        `%${search}%`,
-      );
+      if (looksLikeTransferReference(search)) {
+        const patterns = buildReferenceSearchPatterns(search);
+        conditions.push(
+          "(t.transaction_ref = ? OR t.data_field_id = ? OR t.transaction_ref LIKE ? OR t.data_field_id LIKE ?)"
+        );
+        params.push(patterns.exact, patterns.exact, patterns.prefix, patterns.prefix);
+      } else {
+        conditions.push(
+          "(t.transaction_ref LIKE ? OR t.data_field_id LIKE ? OR c.full_name LIKE ? OR c.email LIKE ? OR c.phone_number LIKE ?)"
+        );
+        params.push(
+          `%${search}%`,
+          `%${search}%`,
+          `%${search}%`,
+          `%${search}%`,
+          `%${search}%`,
+        );
+      }
     }
 
-    const where = conditions.length
-      ? `WHERE ${conditions.join(" AND ")}`
-      : "";
+    const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
     const [[{ total }]] = await pool.execute<RowDataPacket[]>(
       `SELECT COUNT(*) AS total
@@ -139,15 +119,16 @@ export async function GET(req: NextRequest) {
     );
 
     return NextResponse.json({
-      data:  rows,
+      data: rows,
       total: Number(total),
       page,
       limit,
       pages: Math.ceil(Number(total) / limit),
     });
-  } catch (err: unknown) {
+  } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[GET /api/transfers]", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return jsonError(message, 500);
   }
 }
+

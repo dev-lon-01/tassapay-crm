@@ -1,5 +1,5 @@
-/**
- * Country name → ITU dial code (no + prefix, no leading zeros)
+﻿/**
+ * Country name ? ITU dial code (no + prefix, no leading zeros)
  * Covers all countries present in the TassaPay customer base.
  */
 const COUNTRY_DIAL_CODES: Record<string, string> = {
@@ -18,10 +18,10 @@ const COUNTRY_DIAL_CODES: Record<string, string> = {
  * Normalises a raw phone number to E.164 format.
  *
  * Rules (applied in order):
- *  1. Already starts with "+"  → return trimmed as-is
- *  2. Starts with "00"         → replace 00 with +
- *  3. Country code known       → strip the leading "0" (if any), prepend +{dialCode}
- *  4. Fallback                 → prepend "+" and hope for the best
+ *  1. Already starts with "+"  -> return trimmed as-is
+ *  2. Starts with "00"         -> replace 00 with +
+ *  3. Country code known       -> strip the leading "0" (if any), prepend +{dialCode}
+ *  4. Fallback                 -> prepend "+" and hope for the best
  */
 export function normalizePhone(
   phone: string,
@@ -39,3 +39,27 @@ export function normalizePhone(
   const local = p.startsWith("0") ? p.slice(1) : p;
   return `+${dialCode}${local}`;
 }
+
+export function normalizePhoneValue(phone: string | null | undefined): string | null {
+  if (!phone) return null;
+  const digits = phone.replace(/[^\d]/g, "");
+  return digits.length > 0 ? digits : null;
+}
+
+export function getPhoneLast9(phone: string | null | undefined): string | null {
+  const normalized = normalizePhoneValue(phone);
+  if (!normalized) return null;
+  return normalized.slice(-9);
+}
+
+export function getPhoneLookupParts(phone: string | null | undefined): {
+  normalized: string | null;
+  last9: string | null;
+} {
+  const normalized = normalizePhoneValue(phone);
+  return {
+    normalized,
+    last9: normalized ? normalized.slice(-9) : null,
+  };
+}
+

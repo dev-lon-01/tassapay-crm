@@ -1,6 +1,20 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/src/lib/db";
 import { requireAuth } from "@/src/lib/auth";
+import {
+  authorizeCustomerWriteAccess,
+  resolveActorAgentId,
+} from "@/src/lib/authorization";
+import { jsonError } from "@/src/lib/httpResponses";
+import {
+  ensureObject,
+  optionalInteger,
+  optionalNumber,
+  optionalString,
+  parseJsonText,
+  RequestValidationError,
+  requireString,
+} from "@/src/lib/requestValidation";
 import {
   getCallInteractionBySids,
   getInteractionById,
@@ -8,55 +22,107 @@ import {
 } from "@/src/lib/voiceCallState";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
 
-/**
- * POST /api/interactions
- *
- * Logs a new agent interaction against a customer.
- *
- * Request body:
- *   {
- *     customerId : "3146",        // required – must match customers.customer_id
- *     agentId    : 1,             // optional – FK to users.id
- *     type       : "Call",        // required – 'Call' | 'Email' | 'Note' | 'System'
- *     outcome    : "Left Voicemail",
- *     note       : "Will try again tomorrow"
- *   }
- *
- * Returns the newly created interaction row (201 Created).
- */
+const ALLOWED_TYPES = new Set(["Call", "Email", "Note", "System", "SMS"]);
+
+interface CreateInteractionPayload {
+  customerId: string;
+  agentId: number;
+  type: string;
+  outcome?: string | null;
+  note?: string | null;
+  twilioCallSid?: string | null;
+  callDurationSeconds?: number | null;
+  recordingUrl?: string | null;
+  callStatus?: string | null;
+}
+
+function validateCreatePayload(rawBody: string, auth: Parameters<typeof resolveActorAgentId>[0]): CreateInteractionPayload {
+  const body = ensureObject(parseJsonText(rawBody));
+  const type = requireString(body.type, "type", { maxLength: 50 });
+  if (!ALLOWED_TYPES.has(type)) {
+    throw new RequestValidationError("Invalid request payload", [
+      { field: "type", message: "Invalid interaction type" },
+    ]);
+  }
+
+  return {
+    customerId: requireString(body.customerId, "customerId", { maxLength: 50 }),
+    agentId: resolveActorAgentId(auth, body.agentId),
+    type,
+    outcome: optionalString(body.outcome, "outcome", { maxLength: 255, emptyToNull: true }),
+    note: optionalString(body.note, "note", { maxLength: 10000, emptyToNull: true }),
+    twilioCallSid: optionalString(body.twilio_call_sid, "twilio_call_sid", { maxLength: 64, emptyToNull: true }),
+    callDurationSeconds: optionalNumber(body.call_duration_seconds, "call_duration_seconds"),
+    recordingUrl: optionalString(body.recording_url, "recording_url", { maxLength: 500, emptyToNull: true }),
+    callStatus: optionalString(body.call_status, "call_status", { maxLength: 50, emptyToNull: true }),
+  };
+}
+
+function validatePatchPayload(rawBody: string, auth: Parameters<typeof resolveActorAgentId>[0]) {
+  const body = ensureObject(parseJsonText(rawBody));
+  return {
+    id: optionalInteger(body.id, "id"),
+    customerId: optionalString(body.customerId, "customerId", { maxLength: 50, emptyToNull: true }),
+    agentId: resolveActorAgentId(auth, body.agentId),
+    outcome: optionalString(body.outcome, "outcome", { maxLength: 255, emptyToNull: true }),
+    note: optionalString(body.note, "note", { maxLength: 10000, emptyToNull: true }),
+    twilioCallSid: optionalString(body.twilio_call_sid, "twilio_call_sid", { maxLength: 64, emptyToNull: true }),
+    callDurationSeconds: optionalNumber(body.call_duration_seconds, "call_duration_seconds"),
+    recordingUrl: optionalString(body.recording_url, "recording_url", { maxLength: 500, emptyToNull: true }),
+  };
+}
+
+async function authorizeRowAccess(customerId: string | null | undefined, auth: Parameters<typeof resolveActorAgentId>[0]) {
+  if (!customerId) return null;
+  const access = await authorizeCustomerWriteAccess(customerId, auth);
+  return access instanceof NextResponse ? access : null;
+}
+
 export async function POST(req: NextRequest) {
   const auth = requireAuth(req);
   if (auth instanceof NextResponse) return auth;
-  try {
-    const body = await req.json();
-    const { customerId, agentId, type, outcome, note, twilio_call_sid, call_duration_seconds, recording_url } = body ?? {};
 
-    if (!customerId || !type) {
-      return NextResponse.json(
-        { error: "customerId and type are required" },
-        { status: 400 }
-      );
+  try {
+    const payload = validateCreatePayload(await req.text(), auth);
+    const access = await authorizeCustomerWriteAccess(payload.customerId, auth);
+    if (access instanceof NextResponse) return access;
+
+    if (payload.type === "Call" || payload.twilioCallSid) {
+      const interaction = await upsertCallInteraction({
+        lookupSids: payload.twilioCallSid ? [payload.twilioCallSid] : [],
+        twilioCallSid: payload.twilioCallSid ?? null,
+        customerId: payload.customerId,
+        agentId: payload.agentId,
+        outcome: payload.outcome ?? null,
+        callStatus: payload.callStatus ?? null,
+        note: payload.note ?? null,
+        direction: null,
+        callDurationSeconds: payload.callDurationSeconds ?? null,
+        recordingUrl: payload.recordingUrl ?? null,
+        metadata: { updatedFrom: "interactions-post" },
+      });
+
+      if (!interaction) {
+        return jsonError("Failed to create interaction", 500);
+      }
+
+      return NextResponse.json(interaction, { status: 201 });
     }
 
-    // Insert
     const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO interactions (customer_id, agent_id, type, outcome, note, twilio_call_sid, call_duration_seconds, recording_url)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO interactions (customer_id, agent_id, type, outcome, note)
+       VALUES (?, ?, ?, ?, ?)`,
       [
-        String(customerId),
-        agentId != null ? Number(agentId) : null,
-        String(type),
-        outcome != null ? String(outcome) : null,
-        note    != null ? String(note)    : null,
-        twilio_call_sid        != null ? String(twilio_call_sid)        : null,
-        call_duration_seconds  != null ? Number(call_duration_seconds)  : null,
-        recording_url          != null ? String(recording_url)          : null,
+        payload.customerId,
+        payload.agentId,
+        payload.type,
+        payload.outcome ?? null,
+        payload.note ?? null,
       ]
     );
 
-    // Return the full row so the client can optimistically append it
     const [rows] = await pool.execute<RowDataPacket[]>(
-      `SELECT i.id, i.customer_id, i.agent_id, i.type, i.outcome, i.note,
+      `SELECT i.id, i.customer_id, i.agent_id, i.type, i.outcome, i.call_status, i.note,
               i.twilio_call_sid, i.call_duration_seconds, i.recording_url,
               i.created_at, u.name AS agent_name
        FROM   interactions i
@@ -67,9 +133,12 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(rows[0], { status: 201 });
   } catch (err) {
+    if (err instanceof RequestValidationError) {
+      return jsonError(err.message, err.status, err.issues);
+    }
     const message = err instanceof Error ? err.message : String(err);
     console.error("[POST /api/interactions]", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return jsonError(message, 500);
   }
 }
 
@@ -83,10 +152,7 @@ export async function GET(req: NextRequest) {
     const twilioCallSid = searchParams.get("twilio_call_sid");
 
     if (!interactionId && !twilioCallSid) {
-      return NextResponse.json(
-        { error: "id or twilio_call_sid is required" },
-        { status: 400 }
-      );
+      return jsonError("id or twilio_call_sid is required", 400);
     }
 
     const row = interactionId
@@ -94,14 +160,17 @@ export async function GET(req: NextRequest) {
       : await getCallInteractionBySids([twilioCallSid ?? ""]);
 
     if (!row) {
-      return NextResponse.json({ error: "Interaction not found" }, { status: 404 });
+      return jsonError("Interaction not found", 404);
     }
+
+    const accessError = await authorizeRowAccess(row.customer_id, auth);
+    if (accessError) return accessError;
 
     return NextResponse.json(row);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[GET /api/interactions]", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return jsonError(message, 500);
   }
 }
 
@@ -110,60 +179,54 @@ export async function PATCH(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const body = await req.json();
-    const {
-      id,
-      customerId,
-      agentId,
-      outcome,
-      note,
-      twilio_call_sid,
-      call_duration_seconds,
-      recording_url,
-    } = body ?? {};
+    const payload = validatePatchPayload(await req.text(), auth);
 
-    if (!id && !twilio_call_sid) {
-      return NextResponse.json(
-        { error: "id or twilio_call_sid is required" },
-        { status: 400 }
-      );
+    if (!payload.id && !payload.twilioCallSid) {
+      return jsonError("id or twilio_call_sid is required", 400);
     }
 
-    const existing = id
-      ? await getInteractionById(Number(id))
-      : await getCallInteractionBySids([String(twilio_call_sid)]);
+    const existing = payload.id
+      ? await getInteractionById(Number(payload.id))
+      : await getCallInteractionBySids([String(payload.twilioCallSid)]);
 
-    const resolvedCallSid = twilio_call_sid != null
-      ? String(twilio_call_sid)
-      : (existing?.twilio_call_sid ?? null);
+    const accessError = await authorizeRowAccess(payload.customerId ?? existing?.customer_id, auth);
+    if (accessError) return accessError;
 
+    const resolvedCallSid = payload.twilioCallSid ?? existing?.twilio_call_sid ?? null;
     const updated = await upsertCallInteraction({
       lookupSids: resolvedCallSid ? [resolvedCallSid] : [],
       twilioCallSid: resolvedCallSid,
-      customerId: customerId !== undefined ? (customerId != null ? String(customerId) : null) : existing?.customer_id,
-      agentId: agentId !== undefined ? (agentId != null ? Number(agentId) : null) : (existing?.agent_id ?? auth.id),
-      outcome: outcome !== undefined ? (outcome != null ? String(outcome) : null) : existing?.outcome,
-      note: note !== undefined ? (note != null ? String(note) : null) : existing?.note,
+      customerId:
+        payload.customerId !== undefined
+          ? payload.customerId
+          : existing?.customer_id,
+      agentId: payload.agentId ?? existing?.agent_id ?? auth.id,
+      outcome: payload.outcome !== undefined ? payload.outcome : existing?.outcome,
+      note: payload.note !== undefined ? payload.note : existing?.note,
       direction: (existing?.direction as "inbound" | "outbound" | null | undefined) ?? null,
       callDurationSeconds:
-        call_duration_seconds !== undefined
-          ? (call_duration_seconds != null ? Number(call_duration_seconds) : null)
+        payload.callDurationSeconds !== undefined
+          ? payload.callDurationSeconds
           : existing?.call_duration_seconds,
       recordingUrl:
-        recording_url !== undefined
-          ? (recording_url != null ? String(recording_url) : null)
+        payload.recordingUrl !== undefined
+          ? payload.recordingUrl
           : existing?.recording_url,
       metadata: { updatedFrom: "post-call-modal" },
     });
 
     if (!updated) {
-      return NextResponse.json({ error: "Interaction not found" }, { status: 404 });
+      return jsonError("Interaction not found", 404);
     }
 
     return NextResponse.json(updated);
   } catch (err) {
+    if (err instanceof RequestValidationError) {
+      return jsonError(err.message, err.status, err.issues);
+    }
     const message = err instanceof Error ? err.message : String(err);
     console.error("[PATCH /api/interactions]", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return jsonError(message, 500);
   }
 }
+

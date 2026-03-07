@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
@@ -11,11 +11,10 @@ import {
 import { normalizePhone } from "@/src/lib/phoneUtils";
 import { apiFetch } from "@/src/lib/apiFetch";
 import { useTwilioVoice } from "@/src/context/TwilioVoiceContext";
-import { useAuth } from "@/src/context/AuthContext";
 import { useDropdowns } from "@/src/context/DropdownsContext";
 import { useLeadsQueue } from "@/src/context/LeadsQueueContext";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 type LeadStage = "New" | "Contacted" | "Follow-up" | "Converted" | "Dead";
 
@@ -39,6 +38,7 @@ interface ApiInteraction {
   agent_id:              number | null;
   type:                  "Call" | "Email" | "Note" | "System" | "SMS";
   outcome:               string | null;
+  call_status:           string | null;
   note:                  string | null;
   direction:             string | null;
   metadata:              string | null;
@@ -57,7 +57,7 @@ interface ApiTemplate {
   body:    string;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function formatRelative(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -76,8 +76,20 @@ function formatDuration(seconds: number | null): string {
 }
 
 function formatDate(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "â€”";
   return new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function createRequestId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
+    const rand = Math.floor(Math.random() * 16);
+    const value = char === "x" ? rand : (rand & 0x3) | 0x8;
+    return value.toString(16);
+  });
 }
 
 function getLabels(labels: string[] | null | unknown): string[] {
@@ -122,8 +134,8 @@ function timelineColor(type: ApiInteraction["type"]) {
   }
 }
 
-const NOTE_PLACEHOLDER = "Select outcome…";
-// ─── Agent type + COUNTRIES + helpers ─────────────────────────────────────────────
+const NOTE_PLACEHOLDER = "Select outcomeâ€¦";
+// â”€â”€â”€ Agent type + COUNTRIES + helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface Agent { id: number; name: string; }
 
@@ -174,7 +186,7 @@ function swapPrefix(currentPhone: string, newDial: string): string {
   return newDial + local;
 }
 
-// ─── Labels Multi-Select ──────────────────────────────────────────────────────────────
+// â”€â”€â”€ Labels Multi-Select â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function LabelsSelect({
   value,
@@ -233,7 +245,7 @@ function LabelsSelect({
         <input
           id={inputId ?? "labels-input-detail"}
           className="min-w-[80px] flex-1 bg-transparent text-sm outline-none"
-          placeholder={value.length === 0 ? "Add labels…" : ""}
+          placeholder={value.length === 0 ? "Add labelsâ€¦" : ""}
           value={inputVal}
           onChange={(e) => { setInputVal(e.target.value); setOpen(true); }}
           onFocus={() => setOpen(true)}
@@ -261,7 +273,7 @@ function LabelsSelect({
   );
 }
 
-// ─── Edit Lead Modal ───────────────────────────────────────────────────────────
+// â”€â”€â”€ Edit Lead Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function EditLeadModal({
   lead,
@@ -345,7 +357,7 @@ function EditLeadModal({
               className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
               value={form.country}
               onChange={(e) => handleCountryChange(e.target.value)}>
-              <option value="">— Select country —</option>
+              <option value="">â€” Select country â€”</option>
               {form.country && !COUNTRIES.find((c) => c.name === form.country) && (
                 <option value={form.country}>{form.country}</option>
               )}
@@ -372,7 +384,7 @@ function EditLeadModal({
               className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
               value={form.assigned_agent_id}
               onChange={(e) => setForm({ ...form, assigned_agent_id: e.target.value })}>
-              <option value="">— Unassigned —</option>
+              <option value="">â€” Unassigned â€”</option>
               {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
           </div>
@@ -396,12 +408,11 @@ function EditLeadModal({
     </div>
   );
 }
-// ─── Component ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function LeadProfilePage({ params }: { params: { id: string } }) {
   const router = useRouter();
   const { makeCall, callState, callerInfo, callDuration, isMuted, toggleMute, hangUp } = useTwilioVoice();
-  const { user } = useAuth();
   const { noteOutcomes: dbNoteOutcomes } = useDropdowns();
   const { queue } = useLeadsQueue();
   const currentIdx = queue.indexOf(params.id);
@@ -451,7 +462,7 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
     return () => clearTimeout(t);
   }, [toast]);
 
-  // Load lead profile (piggybacking the customers endpoint — leads are customers)
+  // Load lead profile (piggybacking the customers endpoint â€” leads are customers)
   useEffect(() => {
     apiFetch(`/api/customers/${params.id}`)
       .then((r) => {
@@ -545,7 +556,7 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
         const res = await apiFetch("/api/communicate/sms", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ customerId: params.id, agentId: user?.id ?? null, overridePhone: smsTo.trim(), message: smsMessage.trim() }),
+          body: JSON.stringify({ customerId: params.id, requestId: createRequestId(), overridePhone: smsTo.trim(), message: smsMessage.trim() }),
         });
         if (!res.ok) { const e = await res.json(); throw new Error(e.error ?? "Failed to send SMS"); }
         const interaction: ApiInteraction = await res.json();
@@ -555,7 +566,8 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
       } else if (activeTab === "Email") {
         // Template id 6 = "Beneficiary Information Update Required"
         const emailPayload: Record<string, unknown> = {
-          customerId: params.id, agentId: user?.id ?? null,
+          customerId: params.id,
+          requestId: createRequestId(),
           overrideEmail: emailTo.trim(), subject: emailSubject.trim(), message: emailBody.trim(),
         };
         if (selectedTemplateId === 6) {
@@ -577,7 +589,7 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
         const res = await apiFetch("/api/interactions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ customerId: params.id, agentId: user?.id ?? null, type: "Note", outcome: noteOutcome, note: noteOutcome }),
+          body: JSON.stringify({ customerId: params.id, type: "Note", outcome: noteOutcome, note: noteOutcome }),
         });
         if (res.ok) {
           const interaction: ApiInteraction = await res.json();
@@ -604,13 +616,13 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
   const emailTemplates = templates.filter((t) => t.channel === "Email");
   const labels         = getLabels(lead?.labels);
 
-  // ── Loading / not found states ────────────────────────────────────────────
+  // â”€â”€ Loading / not found states â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   if (loading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center gap-2 text-slate-400">
         <Loader2 size={24} className="animate-spin" />
-        <span className="text-sm">Loading lead profile…</span>
+        <span className="text-sm">Loading lead profileâ€¦</span>
       </div>
     );
   }
@@ -669,7 +681,7 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
         )}
       </div>
 
-      {/* ── Lead Profile Card ─────────────────────────────────────────────── */}
+      {/* â”€â”€ Lead Profile Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-4">
@@ -677,7 +689,7 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
               {initials}
             </div>
             <div>
-              <h1 className="text-xl font-bold leading-tight text-slate-900">{lead.full_name ?? "—"}</h1>
+              <h1 className="text-xl font-bold leading-tight text-slate-900">{lead.full_name ?? "â€”"}</h1>
               <p className="mt-0.5 font-mono text-xs text-slate-400">{lead.customer_id}</p>
             </div>
           </div>
@@ -699,7 +711,7 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
         <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="flex items-center gap-2.5 text-sm text-slate-600">
             <Mail size={15} className="flex-shrink-0 text-slate-400" />
-            <span className="truncate">{lead.email ?? "—"}</span>
+            <span className="truncate">{lead.email ?? "â€”"}</span>
           </div>
           <div className="flex items-center gap-2.5 text-sm text-slate-600">
             <Phone size={15} className="flex-shrink-0 text-slate-400" />
@@ -716,11 +728,11 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
                 <span className="group-hover:underline">{normalizePhone(lead.phone_number, lead.country)}</span>
                 <Phone size={11} className="opacity-0 transition-opacity group-hover:opacity-100 text-indigo-500" />
               </button>
-            ) : <span>—</span>}
+            ) : <span>â€”</span>}
           </div>
           <div className="flex items-center gap-2.5 text-sm text-slate-600">
             <MapPin size={15} className="flex-shrink-0 text-slate-400" />
-            <span>{lead.country ?? "—"}</span>
+            <span>{lead.country ?? "â€”"}</span>
           </div>
           <div className="flex items-center gap-2.5 text-sm text-slate-600">
             <Calendar size={15} className="flex-shrink-0 text-slate-400" />
@@ -746,7 +758,7 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
         )}
       </div>
 
-      {/* ── Lead Stage Panel ──────────────────────────────────────────────── */}
+      {/* â”€â”€ Lead Stage Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
         <h2 className="mb-4 flex items-center gap-2 text-base font-semibold text-slate-900">
           <ChevronDown size={16} className="text-sky-500" />
@@ -768,10 +780,10 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
             </button>
           ))}
         </div>
-        {stageSaving && <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-400"><Loader2 size={12} className="animate-spin" /> Saving…</p>}
+        {stageSaving && <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-400"><Loader2 size={12} className="animate-spin" /> Savingâ€¦</p>}
       </div>
 
-      {/* ── Comms Panel ───────────────────────────────────────────────────── */}
+      {/* â”€â”€ Comms Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="rounded-2xl border border-slate-100 bg-white shadow-sm">
         {/* Tabs */}
         <div className="flex border-b border-slate-100">
@@ -791,33 +803,33 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
         </div>
 
         <div className="p-5">
-          {/* ── SMS ── */}
+          {/* â”€â”€ SMS â”€â”€ */}
           {activeTab === "SMS" && (
             <div className="space-y-3">
               {smsTemplates.length > 0 && (
                 <select value={selectedTemplate}
                   onChange={(e) => { setSelectedTemplate(e.target.value); applyTemplate(e.target.value); }}
                   className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-600 outline-none focus:border-indigo-400">
-                  <option value="">— Use a template —</option>
+                  <option value="">â€” Use a template â€”</option>
                   {smsTemplates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
               )}
-              <input value={smsTo} onChange={(e) => setSmsTo(e.target.value)} placeholder="+447911…"
+              <input value={smsTo} onChange={(e) => setSmsTo(e.target.value)} placeholder="+447911â€¦"
                 className="w-full rounded-xl border border-slate-200 px-3 py-2.5 font-mono text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
               <textarea value={smsMessage} onChange={(e) => setSmsMessage(e.target.value)}
-                placeholder="Type your message…" rows={4}
+                placeholder="Type your messageâ€¦" rows={4}
                 className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
             </div>
           )}
 
-          {/* ── Email ── */}
+          {/* â”€â”€ Email â”€â”€ */}
           {activeTab === "Email" && (
             <div className="space-y-3">
               {emailTemplates.length > 0 && (
                 <select value={selectedTemplate}
                   onChange={(e) => { setSelectedTemplate(e.target.value); applyTemplate(e.target.value); }}
                   className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-600 outline-none focus:border-indigo-400">
-                  <option value="">— Use a template —</option>
+                  <option value="">â€” Use a template â€”</option>
                   {emailTemplates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
               )}
@@ -826,9 +838,9 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
               <input value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} placeholder="Subject"
                 className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
               <textarea value={emailBody} onChange={(e) => setEmailBody(e.target.value)}
-                placeholder="Email body…" rows={5}
+                placeholder="Email bodyâ€¦" rows={5}
                 className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
-              {/* Beneficiary template extra fields — shown only when template id=6 is active */}
+              {/* Beneficiary template extra fields â€” shown only when template id=6 is active */}
               {selectedTemplateId === 6 && (
                 <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
                   <p className="text-xs font-semibold text-amber-700">Beneficiary Issue Details</p>
@@ -838,14 +850,14 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
                     className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
                   <input type="text" value={beneficiaryAmount}
                     onChange={(e) => setBeneficiaryAmount(e.target.value)}
-                    placeholder="Amount (e.g. £500 GBP)"
+                    placeholder="Amount (e.g. Â£500 GBP)"
                     className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
                 </div>
               )}
             </div>
           )}
 
-          {/* ── Note ── */}
+          {/* â”€â”€ Note â”€â”€ */}
           {activeTab === "Note" && (
             <div className="space-y-3">
               <select value={noteOutcome} onChange={(e) => setNoteOutcome(e.target.value)}
@@ -855,15 +867,15 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
             </div>
           )}
 
-          {/* ── Call ── */}
+          {/* â”€â”€ Call â”€â”€ */}
           {activeTab === "Call" && (
             <div className="space-y-3">
-              <input value={smsTo} onChange={(e) => setSmsTo(e.target.value)} placeholder="+447911…"
+              <input value={smsTo} onChange={(e) => setSmsTo(e.target.value)} placeholder="+447911â€¦"
                 className="w-full rounded-xl border border-slate-200 px-3 py-2.5 font-mono text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
               {isCallActive ? (
                 <div className="space-y-3 rounded-2xl bg-slate-50 p-4">
                   <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold text-slate-700">Call in progress…</p>
+                    <p className="text-sm font-semibold text-slate-700">Call in progressâ€¦</p>
                     <p className="font-mono text-sm text-slate-500">{callDuration}</p>
                   </div>
                   <div className="flex gap-3">
@@ -903,7 +915,7 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
         </div>
       </div>
 
-      {/* ── Activity Timeline ─────────────────────────────────────────────── */}
+      {/* â”€â”€ Activity Timeline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
         <h2 className="mb-4 flex items-center gap-2 text-base font-semibold text-slate-900">
           <MessageSquare size={16} className="text-indigo-500" />
@@ -935,8 +947,7 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
                         {timelineIcon(item.type)}
                       </span>
                       <p className="text-xs font-semibold text-slate-700">
-                        {item.type}
-                        {item.outcome && <span className="ml-1 font-normal text-slate-400">— {item.outcome}</span>}
+                        {item.outcome ?? item.call_status ?? item.type}
                       </p>
                     </div>
                     <span className="flex-shrink-0 text-xs text-slate-400">{formatRelative(item.created_at)}</span>
@@ -944,7 +955,7 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
 
                   {item.type === "SMS" && item.direction === "inbound" && (
                     <span className="mb-0.5 inline-flex items-center gap-1 rounded-full bg-cyan-50 px-2 py-0.5 text-[11px] font-semibold text-cyan-700">
-                      ← Inbound SMS
+                      â† Inbound SMS
                     </span>
                   )}
 
@@ -956,7 +967,7 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
                     return (
                       <div className="ml-8">
                         <p className="mt-0.5 whitespace-pre-wrap text-sm text-slate-500">
-                          {isLong && !expanded ? note.slice(0, LIMIT) + "…" : note}
+                          {isLong && !expanded ? note.slice(0, LIMIT) + "â€¦" : note}
                         </p>
                         {isLong && (
                           <button
@@ -1010,3 +1021,9 @@ export default function LeadProfilePage({ params }: { params: { id: string } }) 
     </div>
   );
 }
+
+
+
+
+
+

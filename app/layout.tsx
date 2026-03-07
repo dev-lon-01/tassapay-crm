@@ -1,10 +1,7 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/src/context/AuthContext";
-import { QueueProvider } from "@/src/context/QueueContext";
-import { TwilioVoiceProvider } from "@/src/context/TwilioVoiceContext";
-import { DropdownsProvider } from "@/src/context/DropdownsContext";
-import { LeadsQueueProvider } from "@/src/context/LeadsQueueContext";
+import { SessionProviders } from "@/src/components/SessionProviders";
 import { AppShell } from "@/src/components/AppShell";
 
 export const metadata: Metadata = {
@@ -21,17 +18,12 @@ export default function RootLayout({
     <html lang="en">
       <body className="antialiased">
         <AuthProvider>
-          <QueueProvider>
-            <TwilioVoiceProvider>
-              <DropdownsProvider>
-                <LeadsQueueProvider>
-                  <AppShell>{children}</AppShell>
-                </LeadsQueueProvider>
-              </DropdownsProvider>
-            </TwilioVoiceProvider>
-          </QueueProvider>
+          <SessionProviders>
+            <AppShell>{children}</AppShell>
+          </SessionProviders>
         </AuthProvider>
       </body>
     </html>
   );
 }
+

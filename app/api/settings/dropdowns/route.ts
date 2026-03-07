@@ -1,26 +1,25 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/src/lib/db";
 import { requireAuth } from "@/src/lib/auth";
+import { requireAdmin } from "@/src/lib/authorization";
+import { jsonError } from "@/src/lib/httpResponses";
+import {
+  ensureObject,
+  optionalInteger,
+  parseJsonText,
+  RequestValidationError,
+  requireString,
+} from "@/src/lib/requestValidation";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 
-/**
- * GET /api/settings/dropdowns
- *   Returns all active dropdown rows ordered by category + sort_order.
- *   Auth: any authenticated user.
- *
- * POST /api/settings/dropdowns
- *   Body: { category, label, sort_order? }
- *   Creates a new dropdown item.
- *   Auth: Admin only.
- */
+const ALLOWED_CATEGORIES = ["call_outcome", "focus_outcome", "note_outcome"];
 
 export async function GET(req: NextRequest) {
   const auth = requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
   const { searchParams } = new URL(req.url);
-  const category        = searchParams.get("category");
-  // ?includeInactive=1 lets the settings page see toggled-off items
+  const category = searchParams.get("category");
   const includeInactive = searchParams.get("includeInactive") === "1";
 
   const clauses: string[] = [];
@@ -48,49 +47,42 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[GET /api/settings/dropdowns]", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return jsonError(message, 500);
   }
 }
 
 export async function POST(req: NextRequest) {
   const auth = requireAuth(req);
   if (auth instanceof NextResponse) return auth;
-
-  let body: { category?: string; label?: string; sort_order?: number };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
-  }
-
-  const { category, label, sort_order = 0 } = body;
-
-  if (!category || !label) {
-    return NextResponse.json({ error: "category and label are required" }, { status: 400 });
-  }
-
-  const ALLOWED_CATEGORIES = ["call_outcome", "focus_outcome", "note_outcome"];
-  if (!ALLOWED_CATEGORIES.includes(category)) {
-    return NextResponse.json({ error: "Invalid category" }, { status: 400 });
-  }
-
-  if (label.trim().length === 0 || label.trim().length > 100) {
-    return NextResponse.json({ error: "Label must be 1–100 characters" }, { status: 400 });
-  }
+  const adminError = requireAdmin(auth);
+  if (adminError) return adminError;
 
   try {
+    const body = ensureObject(parseJsonText(await req.text()));
+    const category = requireString(body.category, "category", { maxLength: 50 });
+    const label = requireString(body.label, "label", { maxLength: 100 });
+    const sortOrder = optionalInteger(body.sort_order, "sort_order") ?? 0;
+
+    if (!ALLOWED_CATEGORIES.includes(category)) {
+      return jsonError("Invalid category", 400);
+    }
+
     const [result] = await pool.execute<ResultSetHeader>(
       `INSERT INTO system_dropdowns (category, label, sort_order) VALUES (?, ?, ?)`,
-      [category, label.trim(), sort_order]
+      [category, label, sortOrder]
     );
     return NextResponse.json({ id: result.insertId }, { status: 201 });
-  } catch (err: unknown) {
+  } catch (err) {
+    if (err instanceof RequestValidationError) {
+      return jsonError(err.message, err.status, err.issues);
+    }
     const code = (err as { code?: string }).code;
     if (code === "ER_DUP_ENTRY") {
-      return NextResponse.json({ error: "This label already exists in this category" }, { status: 409 });
+      return jsonError("This label already exists in this category", 409);
     }
     const message = err instanceof Error ? err.message : String(err);
     console.error("[POST /api/settings/dropdowns]", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return jsonError(message, 500);
   }
 }
+

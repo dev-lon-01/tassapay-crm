@@ -1,26 +1,17 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/src/lib/db";
+import { validateBackofficeSignature } from "@/src/lib/backofficeWebhook";
+import { jsonError } from "@/src/lib/httpResponses";
+import {
+  isPlainObject,
+  parseJsonText,
+  RequestValidationError,
+  type ValidationIssue,
+} from "@/src/lib/requestValidation";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
 
-/**
- * POST /api/webhooks/backoffice/transfers
- *
- * Accepts a JSON array of raw backoffice transfer objects — same shape as the
- * Transaction_Search API payload consumed by scripts/sync-transfers.mjs.
- *
- * Attribution (last-touch, 14-day window):
- *   On the customer's FIRST ever transfer, looks up the most recent interaction
- *   logged by any agent for that customer within the past 14 days and writes
- *   that agent's id into `attributed_agent_id` on the new transfer row.
- *   On subsequent transfers the column is left NULL.
- *   Re-processing an existing transfer (ON DUPLICATE KEY) never overwrites
- *   an existing attribution.
- *
- * Response: { received, inserted, updated, attributed }
- */
-
 interface RawTransfer {
-  Customer_ID: string | number;
+  Customer_ID: string;
   ReferenceNo: string;
   Date1?: string;
   Totalamount?: string | number;
@@ -44,7 +35,7 @@ function str(v: string | number | undefined | null): string | null {
 function num(v: string | number | undefined | null): number | null {
   if (v === null || v === undefined) return null;
   const n = parseFloat(String(v));
-  return isNaN(n) ? null : n;
+  return Number.isNaN(n) ? null : n;
 }
 
 function stripHtml(raw: string | null): string | null {
@@ -61,7 +52,6 @@ function stripHtml(raw: string | null): string | null {
   return stripped === "" ? null : stripped;
 }
 
-/** "25/02/2026  14:39:44" → "2026-02-25 14:39:44" */
 function parseTransferDate(raw: string | undefined): string | null {
   if (!raw?.trim()) return null;
   const s = raw.trim().replace(/\s+/, " ");
@@ -72,8 +62,68 @@ function parseTransferDate(raw: string | undefined): string | null {
   return `${yyyy}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")} ${timePart ?? "00:00:00"}`;
 }
 
-// attributed_agent_id is in the INSERT values but intentionally absent from
-// the ON DUPLICATE KEY UPDATE list — preserving original attribution on re-sync.
+function stringLike(value: unknown, field: string, issues: ValidationIssue[], index: number): string | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value === "string" || typeof value === "number") {
+    return String(value).trim();
+  }
+  issues.push({ field, index, message: "Expected a string" });
+  return undefined;
+}
+
+function validateTransfersPayload(value: unknown): RawTransfer[] {
+  if (!Array.isArray(value)) {
+    throw new RequestValidationError("Invalid request payload", [
+      { field: "body", message: "Body must be a JSON array of transfer objects" },
+    ]);
+  }
+
+  const issues: ValidationIssue[] = [];
+  const transfers: RawTransfer[] = [];
+
+  value.forEach((entry, index) => {
+    if (!isPlainObject(entry)) {
+      issues.push({ field: "body", index, message: "Each row must be an object" });
+      return;
+    }
+
+    const customerId = stringLike(entry.Customer_ID, "Customer_ID", issues, index);
+    const referenceNo = stringLike(entry.ReferenceNo, "ReferenceNo", issues, index);
+
+    if (!customerId) {
+      issues.push({ field: "Customer_ID", index, message: "Customer_ID is required" });
+    }
+    if (!referenceNo) {
+      issues.push({ field: "ReferenceNo", index, message: "ReferenceNo is required" });
+    }
+    if (!customerId || !referenceNo) {
+      return;
+    }
+
+    transfers.push({
+      Customer_ID: customerId,
+      ReferenceNo: referenceNo,
+      Date1: stringLike(entry.Date1, "Date1", issues, index),
+      Totalamount: entry.Totalamount as string | number | undefined,
+      FromCurrency_Code: stringLike(entry.FromCurrency_Code, "FromCurrency_Code", issues, index),
+      Amount_in_other_cur: entry.Amount_in_other_cur as string | number | undefined,
+      Currency_Code: stringLike(entry.Currency_Code, "Currency_Code", issues, index),
+      Country_Name: stringLike(entry.Country_Name, "Country_Name", issues, index),
+      Reciever: stringLike(entry.Reciever, "Reciever", issues, index),
+      Tx_Status: stringLike(entry.Tx_Status, "Tx_Status", issues, index),
+      LatestCust_Comment: stringLike(entry.LatestCust_Comment, "LatestCust_Comment", issues, index),
+      Ptype: stringLike(entry.Ptype, "Ptype", issues, index),
+      Type_Name: stringLike(entry.Type_Name, "Type_Name", issues, index),
+    });
+  });
+
+  if (issues.length > 0) {
+    throw new RequestValidationError("Invalid request payload", issues);
+  }
+
+  return transfers;
+}
+
 const UPSERT_SQL = `
 INSERT INTO transfers
   (customer_id, transaction_ref, created_at,
@@ -101,91 +151,97 @@ ON DUPLICATE KEY UPDATE
 `;
 
 export async function POST(req: NextRequest) {
-  let body: unknown;
   try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
-
-  if (!Array.isArray(body)) {
-    return NextResponse.json(
-      { error: "Body must be a JSON array of transfer objects" },
-      { status: 400 }
+    const rawBody = await req.text();
+    const signatureCheck = validateBackofficeSignature(
+      rawBody,
+      req.headers.get("x-backoffice-signature")
     );
-  }
 
-  const transfers = body as RawTransfer[];
-  const received = transfers.length;
-
-  if (received === 0) {
-    return NextResponse.json({ received: 0, inserted: 0, updated: 0, attributed: 0 });
-  }
-
-  let inserted = 0, updated = 0, attributed = 0;
-  const conn = await pool.getConnection();
-
-  try {
-    await conn.beginTransaction();
-
-    for (const t of transfers) {
-      if (!t.ReferenceNo || !t.Customer_ID) continue;
-
-      const customerId = String(t.Customer_ID).trim();
-
-      // Detect first transfer for this customer
-      const [countRows] = await conn.execute<RowDataPacket[]>(
-        "SELECT COUNT(*) AS cnt FROM transfers WHERE customer_id = ?",
-        [customerId]
-      );
-      const isFirstTransfer = Number(countRows[0]?.cnt ?? 1) === 0;
-
-      // 14-day last-touch attribution — only on first transfer
-      let attributedAgentId: number | null = null;
-      if (isFirstTransfer) {
-        const [agentRows] = await conn.execute<RowDataPacket[]>(
-          `SELECT agent_id FROM interactions
-           WHERE  customer_id = ?
-             AND  created_at >= DATE_SUB(NOW(), INTERVAL 14 DAY)
-           ORDER BY created_at DESC
-           LIMIT 1`,
-          [customerId]
-        );
-        attributedAgentId = agentRows[0]?.agent_id ?? null;
-        if (attributedAgentId) attributed++;
+    if (!signatureCheck.valid) {
+      const message = `Backoffice transfers webhook rejected (${signatureCheck.reason})`;
+      if (signatureCheck.enforce) {
+        return jsonError(message, 401);
       }
-
-      const row = [
-        customerId,
-        str(t.ReferenceNo),
-        parseTransferDate(t.Date1),
-        num(t.Totalamount),
-        str(t.FromCurrency_Code),
-        num(t.Amount_in_other_cur),
-        str(t.Currency_Code),
-        str(t.Country_Name),
-        str(t.Reciever),
-        str(t.Tx_Status),
-        stripHtml(str(t.LatestCust_Comment)),
-        str(t.Ptype),
-        str(t.Type_Name),
-        attributedAgentId,
-      ];
-
-      const [result] = await conn.execute<ResultSetHeader>(UPSERT_SQL, row);
-      if (result.affectedRows === 1) inserted++;
-      else if (result.affectedRows === 2) updated++;
+      console.warn(`[POST /api/webhooks/backoffice/transfers] ${message}`);
     }
 
-    await conn.commit();
-  } catch (err: unknown) {
-    await conn.rollback();
+    const transfers = validateTransfersPayload(parseJsonText(rawBody));
+    const received = transfers.length;
+
+    if (received === 0) {
+      return NextResponse.json({ received: 0, inserted: 0, updated: 0, attributed: 0 });
+    }
+
+    let inserted = 0;
+    let updated = 0;
+    let attributed = 0;
+    const conn = await pool.getConnection();
+
+    try {
+      await conn.beginTransaction();
+
+      for (const transfer of transfers) {
+        const customerId = String(transfer.Customer_ID).trim();
+
+        const [countRows] = await conn.execute<RowDataPacket[]>(
+          "SELECT COUNT(*) AS cnt FROM transfers WHERE customer_id = ?",
+          [customerId]
+        );
+        const isFirstTransfer = Number(countRows[0]?.cnt ?? 1) === 0;
+
+        let attributedAgentId: number | null = null;
+        if (isFirstTransfer) {
+          const [agentRows] = await conn.execute<RowDataPacket[]>(
+            `SELECT agent_id FROM interactions
+             WHERE  customer_id = ?
+               AND  created_at >= DATE_SUB(NOW(), INTERVAL 14 DAY)
+             ORDER BY created_at DESC
+             LIMIT 1`,
+            [customerId]
+          );
+          attributedAgentId = agentRows[0]?.agent_id ?? null;
+          if (attributedAgentId) attributed++;
+        }
+
+        const row = [
+          customerId,
+          str(transfer.ReferenceNo),
+          parseTransferDate(transfer.Date1),
+          num(transfer.Totalamount),
+          str(transfer.FromCurrency_Code),
+          num(transfer.Amount_in_other_cur),
+          str(transfer.Currency_Code),
+          str(transfer.Country_Name),
+          str(transfer.Reciever),
+          str(transfer.Tx_Status),
+          stripHtml(str(transfer.LatestCust_Comment)),
+          str(transfer.Ptype),
+          str(transfer.Type_Name),
+          attributedAgentId,
+        ];
+
+        const [result] = await conn.execute<ResultSetHeader>(UPSERT_SQL, row);
+        if (result.affectedRows === 1) inserted++;
+        else if (result.affectedRows === 2) updated++;
+      }
+
+      await conn.commit();
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
+    }
+
+    return NextResponse.json({ received, inserted, updated, attributed });
+  } catch (err) {
+    if (err instanceof RequestValidationError) {
+      return jsonError(err.message, err.status, err.issues);
+    }
     const message = err instanceof Error ? err.message : String(err);
     console.error("[POST /api/webhooks/backoffice/transfers]", message);
-    return NextResponse.json({ error: message }, { status: 500 });
-  } finally {
-    conn.release();
+    return jsonError(message, 500);
   }
-
-  return NextResponse.json({ received, inserted, updated, attributed });
 }
+

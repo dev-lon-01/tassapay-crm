@@ -1,4 +1,4 @@
--- TassaPay CRM – MySQL schema
+﻿-- TassaPay CRM â€“ MySQL schema
 -- Safe to rerun: uses IF NOT EXISTS / DROP IF EXISTS where needed.
 
 CREATE DATABASE IF NOT EXISTS `tassapay_crm`
@@ -7,7 +7,7 @@ CREATE DATABASE IF NOT EXISTS `tassapay_crm`
 
 USE `tassapay_crm`;
 
--- ─── users (CRM agents / admins) ─────────────────────────────────────────────
+-- â”€â”€â”€ users (CRM agents / admins) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 CREATE TABLE IF NOT EXISTS `users` (
   `id`            INT           NOT NULL AUTO_INCREMENT,
@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS `users` (
   `password_hash` VARCHAR(255)  DEFAULT NULL,
   `is_active`          TINYINT(1)    NOT NULL DEFAULT 1,
   `voice_available`    TINYINT(1)    NOT NULL DEFAULT 0,
+  `voice_last_seen_at` DATETIME      DEFAULT NULL,
   `sip_username`       VARCHAR(100)  DEFAULT NULL,                       -- Twilio SIP domain username (e.g. abdi)
   `allowed_regions`    JSON          NOT NULL DEFAULT ('["UK","EU"]'),   -- e.g. ["UK","EU"]
   `can_view_dashboard` TINYINT(1)    NOT NULL DEFAULT 0,                 -- grants Agent access to Manager Dashboard
@@ -25,16 +26,18 @@ CREATE TABLE IF NOT EXISTS `users` (
   UNIQUE KEY `uq_users_email` (`email`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ─── customers (filtered backoffice data) ─────────────────────────────────────
+-- â”€â”€â”€ customers (filtered backoffice data) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 CREATE TABLE IF NOT EXISTS `customers` (
   `id`                   INT           NOT NULL AUTO_INCREMENT,
   `customer_id`          VARCHAR(50)   NOT NULL,                 -- backoffice Customer_ID
-  `assigned_user_id`          INT           DEFAULT NULL,             -- FK → users.id
-  `kyc_attributed_agent_id`   INT           DEFAULT NULL,             -- FK → users.id (last-touch agent at KYC completion)
+  `assigned_user_id`          INT           DEFAULT NULL,             -- FK â†’ users.id
+  `kyc_attributed_agent_id`   INT           DEFAULT NULL,             -- FK â†’ users.id (last-touch agent at KYC completion)
   `full_name`                 VARCHAR(255)  DEFAULT NULL,
   `email`                VARCHAR(255)  DEFAULT NULL,
   `phone_number`         VARCHAR(50)   DEFAULT NULL,
+  `phone_normalized`     VARCHAR(32)   DEFAULT NULL,
+  `phone_last9`          VARCHAR(9)    DEFAULT NULL,
   `country`              VARCHAR(100)  DEFAULT NULL,
   `registration_date`    DATETIME      DEFAULT NULL,             -- Record_Insert_DateTime2 parsed
   `kyc_completion_date`  DATETIME      DEFAULT NULL,             -- Record_Insert_DateTime parsed; NULL = KYC not done
@@ -46,7 +49,7 @@ CREATE TABLE IF NOT EXISTS `customers` (
   -- Lead pipeline fields
   `is_lead`              TINYINT(1)    NOT NULL DEFAULT 0,            -- 1 = prospect; 0 = full customer
   `lead_stage`           ENUM('New','Contacted','Follow-up','Converted','Dead') DEFAULT NULL,
-  `assigned_agent_id`    INT           DEFAULT NULL,                  -- FK → users.id
+  `assigned_agent_id`    INT           DEFAULT NULL,                  -- FK â†’ users.id
   `labels`               JSON          DEFAULT NULL,                  -- e.g. ["VIP","facebook_ad"]
 
   PRIMARY KEY (`id`),
@@ -60,20 +63,22 @@ CREATE TABLE IF NOT EXISTS `customers` (
   CONSTRAINT `fk_customers_assigned_agent`
     FOREIGN KEY (`assigned_agent_id`) REFERENCES `users` (`id`)
     ON DELETE SET NULL ON UPDATE CASCADE,
-  INDEX `idx_full_name`   (`full_name`),
-  INDEX `idx_email`       (`email`),
-  INDEX `idx_risk_status` (`risk_status`),
+  INDEX `idx_full_name`         (`full_name`),
+  INDEX `idx_email`             (`email`),
+  INDEX `idx_phone_normalized`  (`phone_normalized`),
+  INDEX `idx_phone_last9`       (`phone_last9`),
+  INDEX `idx_risk_status`       (`risk_status`),
   INDEX `idx_registered`  (`registration_date`),
   INDEX `idx_is_lead`      (`is_lead`),
   INDEX `idx_lead_stage`   (`lead_stage`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ─── interactions (agent activity log) ────────────────────────────────────────
+-- â”€â”€â”€ interactions (agent activity log) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 CREATE TABLE IF NOT EXISTS `interactions` (
   `id`                     INT           NOT NULL AUTO_INCREMENT,
-  `customer_id`            VARCHAR(50)   NULL,                       -- FK → customers.customer_id (nullable: unknown callers still logged)
-  `agent_id`               INT           DEFAULT NULL,              -- FK → users.id
+  `customer_id`            VARCHAR(50)   NULL,                       -- FK â†’ customers.customer_id (nullable: unknown callers still logged)
+  `agent_id`               INT           DEFAULT NULL,              -- FK â†’ users.id
   `type`                   VARCHAR(50)   NOT NULL DEFAULT 'System', -- 'Call' | 'Email' | 'Note' | 'System'
   `outcome`                VARCHAR(255)  DEFAULT NULL,
   `note`                   TEXT          DEFAULT NULL,
@@ -82,6 +87,9 @@ CREATE TABLE IF NOT EXISTS `interactions` (
   `twilio_call_sid`        VARCHAR(64)   DEFAULT NULL,              -- Twilio CallSid (CA...)
   `call_duration_seconds`  INT UNSIGNED  DEFAULT NULL,              -- call length in seconds
   `recording_url`          VARCHAR(500)  DEFAULT NULL,              -- Twilio recording URL
+  `call_status`            VARCHAR(50)   DEFAULT NULL,
+  `request_id`             VARCHAR(64)   DEFAULT NULL,
+  `provider_message_id`    VARCHAR(128)  DEFAULT NULL,
   `created_at`             TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
   PRIMARY KEY (`id`),
@@ -93,10 +101,24 @@ CREATE TABLE IF NOT EXISTS `interactions` (
     ON DELETE SET NULL ON UPDATE CASCADE,
   INDEX `idx_interactions_customer` (`customer_id`),
   INDEX `idx_interactions_agent`    (`agent_id`),
-  UNIQUE KEY `uq_interactions_call_sid` (`twilio_call_sid`)
+  INDEX `idx_interactions_call_status` (`call_status`),
+  UNIQUE KEY `uq_interactions_call_sid` (`twilio_call_sid`),
+  UNIQUE KEY `uq_interactions_request_id` (`request_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ─── sync_log (API pull history) ──────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS `voice_webhook_events` (
+  `id`               BIGINT        NOT NULL AUTO_INCREMENT,
+  `source`           VARCHAR(50)   NOT NULL,
+  `canonical_sid`    VARCHAR(64)   DEFAULT NULL,
+  `event_type`       VARCHAR(50)   DEFAULT NULL,
+  `payload`          JSON          NOT NULL,
+  `created_at`       DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX `idx_voice_webhook_events_sid` (`canonical_sid`),
+  INDEX `idx_voice_webhook_events_source` (`source`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- â”€â”€â”€ sync_log (API pull history) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 CREATE TABLE IF NOT EXISTS `sync_log` (
   `id`               INT UNSIGNED  NOT NULL AUTO_INCREMENT,
@@ -111,7 +133,7 @@ CREATE TABLE IF NOT EXISTS `sync_log` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
--- ─── templates (canned SMS / Email messages for agents) ─────────────────────
+-- â”€â”€â”€ templates (canned SMS / Email messages for agents) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 CREATE TABLE IF NOT EXISTS `templates` (
   `id`         INT           NOT NULL AUTO_INCREMENT,
@@ -149,8 +171,8 @@ INSERT IGNORE INTO `templates` (`id`, `name`, `channel`, `subject`, `body`) VALU
  'Welcome to TassaPay, {{customerName}}! Let''s get started.',
  'Dear {{customerName}},\n\nWelcome to TassaPay! Your account is now fully active.\n\nMaking your first secure, fast, and low-cost money transfer is just a tap away. With our app, you can save your favourite recipients, track your money in real-time, and access exclusive exchange rates.\n\n<a href="http://lnkz.app/feay">Open the app now to send your first transfer.</a>\n\nFor further information, <a href="https://api.whatsapp.com/send?phone=%20+447836%20695516&text=Hello%20There,%20I%20would%20like%20to%20enquire%20about%20money%20transfer.">contact us on WhatsApp</a>.\n\nThank you for choosing TassaPay.\n\nThe TassaPay Team'),
 (10, 'Promo - Zero Fees', 'Email',
- 'Enjoy ZERO Fees on Your Next Transfer! 🚀',
- 'Hi {{customerName}},\n\nGreat news! For a limited time, we are offering absolutely ZERO FEES on your next money transfer.\n\nWhether you are sending money to family or paying for business, you keep more of your money with TassaPay. Don''t miss out on this offer—it gets applied automatically when you use the app.\n\n<a href="http://lnkz.app/feay">Tap here to open the app and claim your fee-free transfer today.</a>\n\nFor further information, <a href="https://api.whatsapp.com/send?phone=%20+447836%20695516&text=Hello%20There,%20I%20would%20like%20to%20enquire%20about%20money%20transfer.">contact us on WhatsApp</a>.\n\nBest,\n\nThe TassaPay Team');
+ 'Enjoy ZERO Fees on Your Next Transfer! ðŸš€',
+ 'Hi {{customerName}},\n\nGreat news! For a limited time, we are offering absolutely ZERO FEES on your next money transfer.\n\nWhether you are sending money to family or paying for business, you keep more of your money with TassaPay. Don''t miss out on this offerâ€”it gets applied automatically when you use the app.\n\n<a href="http://lnkz.app/feay">Tap here to open the app and claim your fee-free transfer today.</a>\n\nFor further information, <a href="https://api.whatsapp.com/send?phone=%20+447836%20695516&text=Hello%20There,%20I%20would%20like%20to%20enquire%20about%20money%20transfer.">contact us on WhatsApp</a>.\n\nBest,\n\nThe TassaPay Team');
 
 CREATE TABLE IF NOT EXISTS `customers` (
   `customer_id`             VARCHAR(20)   NOT NULL,
@@ -162,6 +184,8 @@ CREATE TABLE IF NOT EXISTS `customers` (
   `email`                   VARCHAR(255)  DEFAULT NULL,
   `mobile_number`           VARCHAR(50)   DEFAULT NULL,
   `phone_number`            VARCHAR(50)   DEFAULT NULL,
+  `phone_normalized`     VARCHAR(32)   DEFAULT NULL,
+  `phone_last9`          VARCHAR(9)    DEFAULT NULL,
   `address`                 TEXT          DEFAULT NULL,
   `sender_country`          VARCHAR(100)  DEFAULT NULL,
 
@@ -219,13 +243,13 @@ CREATE TABLE IF NOT EXISTS `customers` (
   INDEX `idx_blacklisted`   (`blacklisted_flag`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ─── transfers (money movement records from TassaPay) ────────────────────────
+-- â”€â”€â”€ transfers (money movement records from TassaPay) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 CREATE TABLE IF NOT EXISTS `transfers` (
   `id`                  INT            NOT NULL AUTO_INCREMENT,
-  `customer_id`         VARCHAR(50)    NOT NULL,                 -- soft-ref → customers.customer_id (numeric Customer_ID from API)
+  `customer_id`         VARCHAR(50)    NOT NULL,                 -- soft-ref â†’ customers.customer_id (numeric Customer_ID from API)
   `transaction_ref`     VARCHAR(50)    NOT NULL,                 -- ReferenceNo e.g. 'TXN23103690'
-  `created_at`          DATETIME       DEFAULT NULL,             -- Date1 (DD/MM/YYYY HH:mm:ss → parsed)
+  `created_at`          DATETIME       DEFAULT NULL,             -- Date1 (DD/MM/YYYY HH:mm:ss â†’ parsed)
   `send_amount`         DECIMAL(10,2)  DEFAULT NULL,             -- Totalamount
   `send_currency`       VARCHAR(10)    DEFAULT NULL,             -- FromCurrency_Code
   `receive_amount`      DECIMAL(10,2)  DEFAULT NULL,             -- Amount_in_other_cur
@@ -236,7 +260,7 @@ CREATE TABLE IF NOT EXISTS `transfers` (
   `hold_reason`         TEXT           DEFAULT NULL,             -- LatestCust_Comment (HTML stripped)
   `payment_method`      VARCHAR(100)   DEFAULT NULL,             -- Ptype
   `delivery_method`     VARCHAR(100)   DEFAULT NULL,             -- Type_Name
-  `attributed_agent_id` INT            DEFAULT NULL,             -- FK → users.id (last-touch agent at first transfer)
+  `attributed_agent_id` INT            DEFAULT NULL,             -- FK â†’ users.id (last-touch agent at first transfer)
   `data_field_id`       VARCHAR(50)    DEFAULT NULL,             -- rmtNo from DataField / TayoTransfer provider
   `data_field_status`   VARCHAR(50)    DEFAULT NULL,             -- Status from TayoTransfer (e.g. 'Ready', 'Cancel')
   `payment_status`      VARCHAR(50)    DEFAULT NULL,             -- paymentReceived_Name from backoffice (e.g. 'Received')
@@ -246,9 +270,10 @@ CREATE TABLE IF NOT EXISTS `transfers` (
 
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_transaction_ref` (`transaction_ref`),
-  INDEX `idx_transfers_customer` (`customer_id`),
-  INDEX `idx_transfers_status`   (`status`),
-  INDEX `idx_transfers_date`     (`created_at`),
+  INDEX `idx_transfers_customer`      (`customer_id`),
+  INDEX `idx_transfers_status`        (`status`),
+  INDEX `idx_transfers_date`          (`created_at`),
+  INDEX `idx_transfers_data_field_id` (`data_field_id`),
   CONSTRAINT `fk_transfers_attributed_agent`
     FOREIGN KEY (`attributed_agent_id`) REFERENCES `users` (`id`)
     ON DELETE SET NULL ON UPDATE CASCADE
@@ -268,7 +293,7 @@ CREATE TABLE IF NOT EXISTS `sync_log` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ─── Migrations (run once on existing installs) ───────────────────────────────
+-- â”€â”€â”€ Migrations (run once on existing installs) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 -- New installs from this schema get the columns automatically via the CREATE TABLE
 -- statements above. For existing databases, run the two ALTERs below once:
 --
@@ -296,7 +321,7 @@ CREATE TABLE IF NOT EXISTS `sync_log` (
 -- ALTER TABLE `transfers`
 --   ADD COLUMN `payment_status` VARCHAR(50) DEFAULT NULL AFTER `data_field_status`;
 
--- ─── alert_routings (SLA breach notification rules) ──────────────────────────
+-- â”€â”€â”€ alert_routings (SLA breach notification rules) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 CREATE TABLE IF NOT EXISTS `alert_routings` (
   `id`                   INT           NOT NULL AUTO_INCREMENT,
@@ -315,7 +340,7 @@ CREATE TABLE IF NOT EXISTS `alert_routings` (
   UNIQUE KEY `uq_alert_routing` (`destination_country`, `source_currency`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ─── system_dropdowns (configurable outcome lists) ────────────────────────────
+-- â”€â”€â”€ system_dropdowns (configurable outcome lists) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 CREATE TABLE IF NOT EXISTS `system_dropdowns` (
   `id`          INT           NOT NULL AUTO_INCREMENT,
@@ -327,3 +352,6 @@ CREATE TABLE IF NOT EXISTS `system_dropdowns` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_dropdown` (`category`, `label`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+

@@ -1,139 +1,210 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import twilio from "twilio";
-import { pool } from "@/src/lib/db";
 import {
   buildExpectedWebhookUrl,
   extractE164FromSip,
+  findAgentIdByIdentity,
   findCustomerIdByPhone,
+  getFreshVoiceAgentRows,
   isValidE164,
   parseTwilioFormBody,
   upsertCallInteraction,
   validateTwilioWebhook,
 } from "@/src/lib/voiceCallState";
-import type { RowDataPacket } from "mysql2";
+import { VOICE_AGENT_TTL_SECONDS } from "@/src/lib/voiceRuntime";
 
 const { VoiceResponse } = twilio.twiml;
 
-export async function POST(req: NextRequest) {
-  const text = await req.text();
-  const params = parseTwilioFormBody(text);
+function xml(body: string, status = 200): NextResponse {
+  return new NextResponse(body, {
+    status,
+    headers: { "Content-Type": "text/xml" },
+  });
+}
 
-  const baseUrl = (process.env.APP_BASE_URL ?? "").replace(/\/$/, "");
-  const signature = req.headers.get("x-twilio-signature") ?? "";
-  const url = buildExpectedWebhookUrl(`${req.nextUrl.pathname}${req.nextUrl.search}`);
-  const isValid = validateTwilioWebhook(signature, url, params);
-  if (!isValid) {
-    return new NextResponse("Forbidden", { status: 403 });
-  }
-
+function invalidDialResponse(message: string): NextResponse {
   const twiml = new VoiceResponse();
-  const fromParam = params["From"] ?? "";
-  const toParam = params["To"] ?? "";
-  const callSid = params["CallSid"] ?? "";
-  const callWebhookBase = `${baseUrl}/api/voice/call-completed`;
-  const recordingStatusCallback = `${callWebhookBase}?source=recording`;
-  const dialOptions = {
-    record: "record-from-answer" as const,
-    recordingStatusCallback,
-    recordingStatusCallbackMethod: "POST" as const,
-    method: "POST" as const,
-  };
+  twiml.say({ voice: "alice" }, message);
+  twiml.hangup();
+  return xml(twiml.toString());
+}
 
-  const isSipAgent = fromParam.startsWith("sip:");
-  const isBrowserAgent = fromParam.startsWith("client:");
-  const sipOutboundNumber = isSipAgent ? extractE164FromSip(toParam) : null;
-  const browserOutboundNumber = isBrowserAgent && isValidE164(toParam) ? toParam : null;
+export async function POST(req: NextRequest) {
+  try {
+    const rawBody = await req.text();
+    const params = parseTwilioFormBody(rawBody);
+    const signature = req.headers.get("x-twilio-signature") ?? "";
+    const url = buildExpectedWebhookUrl(`${req.nextUrl.pathname}${req.nextUrl.search}`);
 
-  if (isSipAgent && !sipOutboundNumber) {
-    twiml.say({ voice: "alice" }, "Please enter a valid phone number and try again.");
-    twiml.hangup();
-  } else if (sipOutboundNumber || browserOutboundNumber) {
-    const targetNumber = sipOutboundNumber ?? browserOutboundNumber!;
-    const actionUrl = `${callWebhookBase}?source=dial-action&flow=outbound&leg=parent`;
-    const pstnStatusUrl = `${callWebhookBase}?source=leg-status&flow=outbound&leg=pstn`;
-    const dial = twiml.dial({
-      ...dialOptions,
-      callerId: process.env.TWILIO_PHONE_NUMBER!,
-      action: actionUrl,
-    });
-    dial.number(
-      {
-        statusCallback: pstnStatusUrl,
-        statusCallbackMethod: "POST",
-        statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
-      },
-      targetNumber
-    );
-  } else if (isBrowserAgent) {
-    twiml.say({ voice: "alice" }, "Please enter a valid phone number and try again.");
-    twiml.hangup();
-  } else {
-    const sipDomain = process.env.TWILIO_SIP_DOMAIN?.trim() ?? "";
-    const [rows] = await pool.execute<RowDataPacket[]>(
-      "SELECT id, sip_username FROM users WHERE voice_available = 1 ORDER BY id ASC LIMIT 1"
-    );
-    if (rows.length > 0) {
-      const agentId  = rows[0].id as number;
-      const sipUser  = (rows[0].sip_username as string | null)?.trim() || `agent_${agentId}`;
-      const actionUrl = `${callWebhookBase}?source=dial-action&flow=inbound&leg=parent&agentId=${agentId}`;
-      const dial = twiml.dial({ ...dialOptions, action: actionUrl });
-      dial.client(
+    if (!validateTwilioWebhook(signature, url, params)) {
+      return new NextResponse("Forbidden", { status: 403 });
+    }
+
+    const baseUrl = (process.env.APP_BASE_URL ?? "").replace(/\/$/, "");
+    const twiml = new VoiceResponse();
+    const fromParam = params.From ?? "";
+    const toParam = params.To ?? "";
+    const callSid = params.CallSid ?? "";
+    const callWebhookBase = `${baseUrl}/api/voice/call-completed`;
+    const recordingStatusCallback = `${callWebhookBase}?source=recording`;
+    const dialOptions = {
+      record: "record-from-answer" as const,
+      recordingStatusCallback,
+      recordingStatusCallbackMethod: "POST" as const,
+      method: "POST" as const,
+    };
+
+    const isSipAgent = fromParam.startsWith("sip:");
+    const isBrowserAgent = fromParam.startsWith("client:");
+    const flow = (isSipAgent || isBrowserAgent) ? "outbound" : "inbound";
+    const sipOutboundNumber = isSipAgent ? extractE164FromSip(toParam) : null;
+    const browserOutboundNumber = isBrowserAgent && isValidE164(toParam) ? toParam : null;
+
+    if (isBrowserAgent && (toParam.startsWith("client:") || toParam.startsWith("sip:"))) {
+      return invalidDialResponse("Browser calls must dial a phone number, not an internal endpoint.");
+    }
+
+    if ((isSipAgent || isBrowserAgent) && !sipOutboundNumber && !browserOutboundNumber) {
+      return invalidDialResponse("Please enter a valid phone number and try again.");
+    }
+
+    const targetNumber = sipOutboundNumber ?? browserOutboundNumber;
+    const customerPhone = flow === "outbound" ? targetNumber : fromParam;
+    const customerId = await findCustomerIdByPhone(customerPhone);
+    const agentId = flow === "outbound" ? await findAgentIdByIdentity(fromParam) : null;
+
+    if (callSid) {
+      await upsertCallInteraction({
+        lookupSids: [callSid],
+        twilioCallSid: callSid,
+        customerId: customerId ?? undefined,
+        agentId: agentId ?? undefined,
+        direction: flow,
+        callStatus: params.CallStatus ?? "initiated",
+        note:
+          flow === "outbound"
+            ? `Outbound to ${targetNumber ?? "unknown"}`
+            : `Inbound from ${fromParam || "Unknown"}`,
+        metadata: {
+          source: "twiml",
+          flow,
+          from: fromParam || null,
+          to: toParam || null,
+          callSid: callSid || null,
+        },
+      });
+    }
+
+    if (flow === "outbound") {
+      const actionUrl = `${callWebhookBase}?source=dial-action&flow=outbound&leg=parent`;
+      const pstnStatusUrl = `${callWebhookBase}?source=leg-status&flow=outbound&leg=pstn`;
+      const dial = twiml.dial({
+        ...dialOptions,
+        callerId: process.env.TWILIO_PHONE_NUMBER ?? process.env.TWILIO_FROM_NUMBER!,
+        action: actionUrl,
+      });
+      dial.number(
         {
-          statusCallback: `${callWebhookBase}?source=leg-status&flow=inbound&leg=browser&agentId=${agentId}`,
+          statusCallback: pstnStatusUrl,
           statusCallbackMethod: "POST",
           statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
         },
-        `agent_${agentId}`
+        targetNumber!,
+      );
+
+      return xml(twiml.toString());
+    }
+
+    const availableAgents = await getFreshVoiceAgentRows(VOICE_AGENT_TTL_SECONDS);
+    if (availableAgents.length > 0) {
+      const selectedAgentId = Number(availableAgents[0].id);
+      const sipDomain = process.env.TWILIO_SIP_DOMAIN?.trim() ?? "";
+      const sipUser = (availableAgents[0].sip_username as string | null)?.trim() || `agent_${selectedAgentId}`;
+
+      if (callSid) {
+        await upsertCallInteraction({
+          lookupSids: [callSid],
+          twilioCallSid: callSid,
+          customerId: customerId ?? undefined,
+          agentId: selectedAgentId,
+          direction: "inbound",
+          callStatus: "ringing",
+          note: `Inbound from ${fromParam || "Unknown"} - ringing agent ${selectedAgentId}`,
+          metadata: {
+            source: "twiml",
+            flow: "inbound",
+            selectedAgentId,
+            from: fromParam || null,
+            to: toParam || null,
+            callSid: callSid || null,
+          },
+        });
+      }
+
+      const actionUrl = `${callWebhookBase}?source=dial-action&flow=inbound&leg=parent&agentId=${selectedAgentId}`;
+      const dial = twiml.dial({ ...dialOptions, action: actionUrl });
+      dial.client(
+        {
+          statusCallback: `${callWebhookBase}?source=leg-status&flow=inbound&leg=browser&agentId=${selectedAgentId}`,
+          statusCallbackMethod: "POST",
+          statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
+        },
+        `agent_${selectedAgentId}`
       );
       if (sipDomain) {
         dial.sip(
           {
-            statusCallback: `${callWebhookBase}?source=leg-status&flow=inbound&leg=sip&agentId=${agentId}`,
+            statusCallback: `${callWebhookBase}?source=leg-status&flow=inbound&leg=sip&agentId=${selectedAgentId}`,
             statusCallbackMethod: "POST",
             statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
           },
           `sip:${sipUser}@${sipDomain}`
         );
       }
-    } else {
-      const customerId = await findCustomerIdByPhone(fromParam);
-      if (callSid) {
-        await upsertCallInteraction({
-          lookupSids: [callSid],
-          twilioCallSid: callSid,
-          customerId,
-          agentId: null,
-          direction: "inbound",
-          outcome: "Missed Inbound Call",
-          note: `Inbound from ${fromParam || "Unknown"} — no agents available`,
-          metadata: {
-            flow: "inbound",
-            leg: "voicemail",
-            source: "twiml-no-agent",
-            from: fromParam || null,
-            to: toParam || null,
-            noAgentsAvailable: true,
-          },
-        });
-      }
-      twiml.say(
-        { voice: "alice" },
-        "Thank you for calling TassaPay. All agents are currently unavailable. Please leave a message after the tone and we will get back to you."
-      );
-      twiml.record({
-        maxLength: 120,
-        finishOnKey: "#",
-        recordingStatusCallback: `${recordingStatusCallback}&flow=inbound&leg=voicemail`,
-        recordingStatusCallbackMethod: "POST",
-        transcribe: false,
-      });
-      twiml.say({ voice: "alice" }, "We did not receive a recording. Goodbye.");
-      twiml.hangup();
-    }
-  }
 
-  return new NextResponse(twiml.toString(), {
-    status: 200,
-    headers: { "Content-Type": "text/xml" },
-  });
+      return xml(twiml.toString());
+    }
+
+    if (callSid) {
+      await upsertCallInteraction({
+        lookupSids: [callSid],
+        twilioCallSid: callSid,
+        customerId: customerId ?? undefined,
+        agentId: null,
+        direction: "inbound",
+        callStatus: "voicemail-prompted",
+        note: `Inbound from ${fromParam || "Unknown"} - no agents available`,
+        metadata: {
+          source: "twiml-no-agent",
+          flow: "inbound",
+          from: fromParam || null,
+          to: toParam || null,
+          callSid: callSid || null,
+          noAgentsAvailable: true,
+        },
+      });
+    }
+
+    twiml.say(
+      { voice: "alice" },
+      "Thank you for calling TassaPay. All agents are currently unavailable. Please leave a message after the tone and we will get back to you."
+    );
+    twiml.record({
+      maxLength: 120,
+      finishOnKey: "#",
+      recordingStatusCallback: `${recordingStatusCallback}&flow=inbound&leg=voicemail`,
+      recordingStatusCallbackMethod: "POST",
+      transcribe: false,
+    });
+    twiml.say({ voice: "alice" }, "We did not receive a recording. Goodbye.");
+    twiml.hangup();
+
+    return xml(twiml.toString());
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[POST /api/voice/twiml]", message);
+    return new NextResponse("Internal Server Error", { status: 500 });
+  }
 }
+
+

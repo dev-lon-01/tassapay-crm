@@ -1,11 +1,11 @@
-/**
+﻿/**
  * scripts/sync-worker.mjs
  *
- * Unified background worker — runs all sync + alert jobs every 5 minutes in order:
- *   1. Sync customers   (TassaPay backoffice → MySQL customers table)
- *   2. Sync transfers   (TassaPay backoffice → MySQL transfers table)
- *   3. Sync Tayo data   (TayoTransfer API → data_field_id + data_field_status)
- *   4. Fire SLA alerts  (Ready transfers grouped by currency → SMS + email)
+ * Unified background worker â€” runs all sync + alert jobs every 5 minutes in order:
+ *   1. Sync customers   (TassaPay backoffice â†’ MySQL customers table)
+ *   2. Sync transfers   (TassaPay backoffice â†’ MySQL transfers table)
+ *   3. Sync Tayo data   (TayoTransfer API â†’ data_field_id + data_field_status)
+ *   4. Fire SLA alerts  (Ready transfers grouped by currency â†’ SMS + email)
  *
  * Usage:
  *   node scripts/sync-worker.mjs
@@ -23,7 +23,7 @@ import https from "https";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const require   = createRequire(import.meta.url);
 
-// ── Load .env.local ───────────────────────────────────────────────────────────
+// â”€â”€ Load .env.local â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const envPath  = resolve(__dirname, "../.env.local");
 const envLines = readFileSync(envPath, "utf8").split("\n");
 for (const line of envLines) {
@@ -33,7 +33,7 @@ for (const line of envLines) {
   if (key && rest.length) process.env[key.trim()] = rest.join("=").trim();
 }
 
-// ── CJS imports ───────────────────────────────────────────────────────────────
+// â”€â”€ CJS imports â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const cron        = require("node-cron");
 const twilio      = require("twilio");
 const { Resend }  = require("resend");
@@ -41,7 +41,7 @@ const mysql       = require("mysql2/promise");
 const fetch   = require("node-fetch");
 const { syncLatestTransfers } = require("../src/services/tayoSyncService");
 
-// ── Shared DB pool ────────────────────────────────────────────────────────────
+// â”€â”€ Shared DB pool â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const pool = mysql.createPool({
   host:               process.env.DB_HOST     ?? "localhost",
   port:               Number(process.env.DB_PORT ?? 3306),
@@ -52,7 +52,7 @@ const pool = mysql.createPool({
   connectionLimit:    5,
 });
 
-// ── Backoffice API constants ──────────────────────────────────────────────────
+// â”€â”€ Backoffice API constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const BASE    = "https://tassapay.co.uk/backoffice";
 const HEADERS = {
   accept:              "*/*",
@@ -62,7 +62,7 @@ const HEADERS = {
   "x-requested-with": "XMLHttpRequest",
 };
 
-// ── Utility helpers ───────────────────────────────────────────────────────────
+// â”€â”€ Utility helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function fmtDate(d) {
   return [
     String(d.getDate()).padStart(2, "0"),
@@ -120,12 +120,23 @@ function parseDateField(raw) {
   return `${yyyy}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")} ${timePart ?? "00:00:00"}`;
 }
 
+function normalizePhoneValue(phone) {
+  if (!phone) return null;
+  const digits = String(phone).replace(/[^\d]/g, "");
+  return digits.length > 0 ? digits : null;
+}
+
+function getPhoneLast9(phone) {
+  const normalized = normalizePhoneValue(phone);
+  return normalized ? normalized.slice(-9) : null;
+}
+
 function splitList(raw) {
   if (!raw) return [];
   return raw.split(",").map((s) => s.trim()).filter(Boolean);
 }
 
-// ── TassaPay Backoffice Login ─────────────────────────────────────────────────
+// â”€â”€ TassaPay Backoffice Login â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function loginToBackoffice() {
   const lr = await fetch(`${BASE}/LoginHandler.ashx?Task=1`, {
     method:  "POST",
@@ -152,7 +163,7 @@ async function loginToBackoffice() {
   return { ld, cookieHeader };
 }
 
-// ── sync_log helper ─────────────────────────────────────────────────────────
+// â”€â”€ sync_log helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function logStart(type) {
   const [r] = await pool.execute(
     "INSERT INTO sync_log (started_at, type, status) VALUES (NOW(), ?, 'running')",
@@ -173,10 +184,10 @@ async function logError(id, err) {
   );
 }
 
-// ── Step 1: Sync Customers ────────────────────────────────────────────────────
+// â”€â”€ Step 1: Sync Customers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function syncCustomers() {
   const { fromdate, todate } = getRecentDateRange();
-  console.log(`[Customers] Syncing ${fromdate} → ${todate}`);
+  console.log(`[Customers] Syncing ${fromdate} â†’ ${todate}`);
   const logId = await logStart('customers');
 
   const { ld, cookieHeader } = await loginToBackoffice();
@@ -198,13 +209,15 @@ async function syncCustomers() {
 
   const UPSERT_SQL = `
     INSERT INTO customers
-      (customer_id, full_name, email, phone_number, country,
+      (customer_id, full_name, email, phone_number, phone_normalized, phone_last9, country,
        registration_date, kyc_completion_date, risk_status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON DUPLICATE KEY UPDATE
       full_name           = VALUES(full_name),
       email               = VALUES(email),
       phone_number        = VALUES(phone_number),
+      phone_normalized    = VALUES(phone_normalized),
+      phone_last9         = VALUES(phone_last9),
       country             = VALUES(country),
       registration_date   = VALUES(registration_date),
       kyc_completion_date = VALUES(kyc_completion_date),
@@ -217,11 +230,14 @@ async function syncCustomers() {
   try {
     for (const c of customers) {
       if (!c.Customer_ID) continue;
+      const phone = str(c.Mobile_Number1);
       const [res] = await conn.execute(UPSERT_SQL, [
         c.Customer_ID,
         str(c.Full_Name),
         str(c.Email_ID),
-        str(c.Mobile_Number1),
+        phone,
+        normalizePhoneValue(phone),
+        getPhoneLast9(phone),
         str(c.sender_country),
         parseDateField(c.Record_Insert_DateTime2),
         parseDateField(c.Record_Insert_DateTime),
@@ -238,13 +254,13 @@ async function syncCustomers() {
     conn.release();
   }
 
-  console.log(`[Customers] Done — ${customers.length} fetched, ${inserted} new, ${updated} updated`);
+  console.log(`[Customers] Done â€” ${customers.length} fetched, ${inserted} new, ${updated} updated`);
 }
 
-// ── Step 2: Sync Transfers ────────────────────────────────────────────────────
+// â”€â”€ Step 2: Sync Transfers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function syncTransfers() {
   const { fromdate, todate } = getRecentDateRange();
-  console.log(`[Transfers] Syncing ${fromdate} → ${todate}`);
+  console.log(`[Transfers] Syncing ${fromdate} â†’ ${todate}`);
   const logId = await logStart('transfers');
 
   const { ld, cookieHeader } = await loginToBackoffice();
@@ -324,24 +340,24 @@ async function syncTransfers() {
     conn.release();
   }
 
-  console.log(`[Transfers] Done — ${transfers.length} fetched, ${inserted} new, ${updated} updated, ${skipped} skipped`);
+  console.log(`[Transfers] Done â€” ${transfers.length} fetched, ${inserted} new, ${updated} updated, ${skipped} skipped`);
 }
 
-// ── Step 3: Sync TayoTransfer data ───────────────────────────────────────────
+// â”€â”€ Step 3: Sync TayoTransfer data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function syncTayo() {
   console.log("[Tayo] Syncing TayoTransfer data...");
   const logId = await logStart('tayo');
   try {
     const result = await syncLatestTransfers(pool);
     await logDone(logId, result.total, 0, result.updated);
-    console.log(`[Tayo] Done — ${result.total} EFU records, ${result.updated} transfers updated`);
+    console.log(`[Tayo] Done â€” ${result.total} EFU records, ${result.updated} transfers updated`);
   } catch (err) {
     await logError(logId, err);
     throw err;
   }
 }
 
-// ── Step 4: SLA Alerts ────────────────────────────────────────────────────────
+// â”€â”€ Step 4: SLA Alerts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function checkAndFireSlaAlerts() {
   // Only alert on transfers where TayoTransfer has marked them as Ready
   const [readyTransfers] = await pool.execute(
@@ -357,7 +373,7 @@ async function checkAndFireSlaAlerts() {
     return;
   }
 
-  console.log(`[SLA] ${readyTransfers.length} ready transfer(s) found — grouping by currency`);
+  console.log(`[SLA] ${readyTransfers.length} ready transfer(s) found â€” grouping by currency`);
 
   // Group transfers by currency so we send one alert per currency
   const byCurrency = {};
@@ -383,7 +399,7 @@ async function checkAndFireSlaAlerts() {
     );
 
     if (!routingRows.length) {
-      console.log(`[SLA] No active rule for ${currency} — skipping ${group.length} transfer(s)`);
+      console.log(`[SLA] No active rule for ${currency} â€” skipping ${group.length} transfer(s)`);
       continue;
     }
 
@@ -392,7 +408,7 @@ async function checkAndFireSlaAlerts() {
     const emails  = splitList(routing.alert_emails);
 
     if (!phones.length && !emails.length) {
-      console.log(`[SLA] Routing rule for ${currency} has no contacts configured — skipping`);
+      console.log(`[SLA] Routing rule for ${currency} has no contacts configured â€” skipping`);
       continue;
     }
 
@@ -439,11 +455,11 @@ async function checkAndFireSlaAlerts() {
       );
     }
 
-    // ── Pushover summary ─────────────────────────────────────────────────
+    // â”€â”€ Pushover summary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (process.env.PUSHOVER_USER_KEY && routing.pushover_enabled) {
       const pushoverMsg = count === 1
-        ? `🚨 SLA Breach: Transfer ${group[0].transaction_ref} is delayed. Amount: ${group[0].send_amount ?? "?"} ${currency}.`
-        : `🚨 SLA Breach: ${count} ${currency} transfers are overdue.\nLatest: ${group[0].transaction_ref} (+${count - 1} more).\nPlease check QA Dashboard.`;
+        ? `ðŸš¨ SLA Breach: Transfer ${group[0].transaction_ref} is delayed. Amount: ${group[0].send_amount ?? "?"} ${currency}.`
+        : `ðŸš¨ SLA Breach: ${count} ${currency} transfers are overdue.\nLatest: ${group[0].transaction_ref} (+${count - 1} more).\nPlease check QA Dashboard.`;
       const pushBody = {
         token:    process.env.PUSHOVER_APP_TOKEN,
         user:     process.env.PUSHOVER_USER_KEY,
@@ -476,14 +492,14 @@ async function checkAndFireSlaAlerts() {
         );
       }
       const pushCount = (process.env.PUSHOVER_USER_KEY && routing.pushover_enabled) ? 1 : 0;
-      console.log(`[SLA] Alerted: ${count} ${currency} transfer(s) — ${phones.length} SMS, ${emails.length} email(s), ${pushCount} push`);
+      console.log(`[SLA] Alerted: ${count} ${currency} transfer(s) â€” ${phones.length} SMS, ${emails.length} email(s), ${pushCount} push`);
     } else {
-      console.log(`[SLA] No alerts dispatched for ${currency} — spam lock not applied`);
+      console.log(`[SLA] No alerts dispatched for ${currency} â€” spam lock not applied`);
     }
   }
 }
 
-// ── Main pipeline ─────────────────────────────────────────────────────────────
+// â”€â”€ Main pipeline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function runAllSyncs() {
   console.log(`\n[Sync Worker] === Run started ${new Date().toISOString()} ===`);
   const start = Date.now();
@@ -507,7 +523,7 @@ async function runAllSyncs() {
   console.log(`[Sync Worker] === Done in ${elapsed}s ===\n`);
 }
 
-// ── Cron: every 5 minutes ─────────────────────────────────────────────────────
+// â”€â”€ Cron: every 5 minutes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 cron.schedule("*/5 * * * *", async () => {
   try {
     await runAllSyncs();
@@ -516,8 +532,10 @@ cron.schedule("*/5 * * * *", async () => {
   }
 });
 
-console.log("[Sync Worker] Started — running every 5 minutes.");
+console.log("[Sync Worker] Started â€” running every 5 minutes.");
 console.log("[Sync Worker] Running initial sync now...\n");
 
 // Run immediately on startup
 runAllSyncs().catch((err) => console.error("[Sync Worker] Startup run failed:", err));
+
+

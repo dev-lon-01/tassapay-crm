@@ -9,16 +9,20 @@
  * Usage:
  *   node scripts/migrate-leads.mjs
  */
-import "dotenv/config";
+
 import mysql from "mysql2/promise";
+import { readFileSync } from "fs";
+
+const env = Object.fromEntries(
+  readFileSync(".env.local", "utf8")
+    .split("\n")
+    .filter(l => l.includes("=") && !l.startsWith("#"))
+    .map(l => { const i = l.indexOf("="); return [l.slice(0, i).trim(), l.slice(i + 1).trim()]; })
+);
 
 const conn = await mysql.createConnection({
-  host:     process.env.DB_HOST     ?? "localhost",
-  port:     Number(process.env.DB_PORT ?? 3306),
-  user:     process.env.DB_USER     ?? "root",
-  password: process.env.DB_PASSWORD ?? "",
-  database: process.env.DB_NAME     ?? "tassapay_crm",
-  timezone: "Z",
+  host: env.DB_HOST, port: Number(env.DB_PORT),
+  user: env.DB_USER, password: env.DB_PASSWORD, database: env.DB_NAME,
 });
 
 async function columnExists(table, col) {

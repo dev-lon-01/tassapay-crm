@@ -1,73 +1,77 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/src/lib/db";
 import { requireAuth } from "@/src/lib/auth";
+import { requireAdmin } from "@/src/lib/authorization";
+import { jsonError } from "@/src/lib/httpResponses";
+import {
+  ensureObject,
+  optionalInteger,
+  parseJsonText,
+  RequestValidationError,
+  optionalString,
+} from "@/src/lib/requestValidation";
 import type { ResultSetHeader } from "mysql2";
 
-/**
- * PUT /api/settings/dropdowns/:id
- *   Body: { label?, sort_order?, is_active? }
- *   Updates a dropdown item.  No DELETE — use is_active=0 for soft-delete.
- *   Auth: Admin only.
- */
 export async function PUT(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   const auth = requireAuth(req);
   if (auth instanceof NextResponse) return auth;
+  const adminError = requireAdmin(auth);
+  if (adminError) return adminError;
 
   const id = Number(params.id);
   if (!Number.isInteger(id) || id < 1) {
-    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+    return jsonError("Invalid id", 400);
   }
 
-  let body: { label?: string; sort_order?: number; is_active?: number };
   try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
-  }
+    const body = ensureObject(parseJsonText(await req.text()));
+    const updates: string[] = [];
+    const values: (string | number)[] = [];
 
-  const updates: string[] = [];
-  const values: (string | number)[] = [];
-
-  if (body.label !== undefined) {
-    const trimmed = body.label.trim();
-    if (trimmed.length === 0 || trimmed.length > 100) {
-      return NextResponse.json({ error: "Label must be 1–100 characters" }, { status: 400 });
+    if (body.label !== undefined) {
+      const label = optionalString(body.label, "label", { maxLength: 100 });
+      if (!label) {
+        return jsonError("Label must be 1-100 characters", 400);
+      }
+      updates.push("label = ?");
+      values.push(label);
     }
-    updates.push("label = ?");
-    values.push(trimmed);
-  }
 
-  if (body.sort_order !== undefined) {
-    updates.push("sort_order = ?");
-    values.push(Number(body.sort_order));
-  }
+    if (body.sort_order !== undefined) {
+      updates.push("sort_order = ?");
+      values.push(optionalInteger(body.sort_order, "sort_order") ?? 0);
+    }
 
-  if (body.is_active !== undefined) {
-    updates.push("is_active = ?");
-    values.push(body.is_active ? 1 : 0);
-  }
+    if (body.is_active !== undefined) {
+      const isActive = body.is_active ? 1 : 0;
+      updates.push("is_active = ?");
+      values.push(isActive);
+    }
 
-  if (updates.length === 0) {
-    return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
-  }
+    if (updates.length === 0) {
+      return jsonError("Nothing to update", 400);
+    }
 
-  values.push(id);
+    values.push(id);
 
-  try {
     const [result] = await pool.execute<ResultSetHeader>(
       `UPDATE system_dropdowns SET ${updates.join(", ")} WHERE id = ?`,
       values
     );
     if (result.affectedRows === 0) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return jsonError("Not found", 404);
     }
     return NextResponse.json({ ok: true });
   } catch (err) {
+    if (err instanceof RequestValidationError) {
+      return jsonError(err.message, err.status, err.issues);
+    }
     const message = err instanceof Error ? err.message : String(err);
     console.error("[PUT /api/settings/dropdowns/:id]", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return jsonError(message, 500);
   }
 }
+

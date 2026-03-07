@@ -1,16 +1,15 @@
 ﻿/**
- * Customer upsert logic — lean CRM schema.
+ * Customer upsert logic - lean CRM schema.
  *
- * Extracts only the 8 CRM fields from the raw backoffice payload and
- * performs INSERT … ON DUPLICATE KEY UPDATE keyed on customer_id.
+ * Extracts only the core CRM fields from the raw backoffice payload and
+ * performs INSERT ... ON DUPLICATE KEY UPDATE keyed on customer_id.
  *
  * Date format from backoffice: "DD/MM/YYYY HH:mm:ss" or ""
  * MySQL requires:               "YYYY-MM-DD HH:mm:ss" or NULL
  */
 import { pool } from "./db";
 import type mysql from "mysql2/promise";
-
-// ─── raw backoffice payload shape ─────────────────────────────────────────────
+import { getPhoneLast9, normalizePhoneValue } from "./phoneUtils";
 
 export interface RawCustomer {
   Customer_ID: string;
@@ -18,26 +17,19 @@ export interface RawCustomer {
   Email_ID?: string;
   Mobile_Number1?: string;
   sender_country?: string;
-  Record_Insert_DateTime2?: string; // registration date  "DD/MM/YYYY HH:mm:ss"
-  Record_Insert_DateTime?: string;  // kyc completion date "DD/MM/YYYY HH:mm:ss" | ""
+  Record_Insert_DateTime2?: string;
+  Record_Insert_DateTime?: string;
   Risk_status?: string;
   [key: string]: string | undefined;
 }
-
-// ─── helpers ──────────────────────────────────────────────────────────────────
 
 function str(v: string | undefined): string | null {
   if (!v || !v.trim()) return null;
   return v.trim();
 }
 
-/**
- * Convert "DD/MM/YYYY HH:mm:ss" → "YYYY-MM-DD HH:mm:ss"
- * Returns null for empty / invalid strings.
- */
 export function parseDateDDMMYYYY(raw: string | undefined): string | null {
   if (!raw || !raw.trim()) return null;
-  // Handle both "DD/MM/YYYY HH:mm:ss" and "DD/MM/YYYY" forms
   const [datePart, timePart] = raw.trim().split(" ");
   const parts = datePart.split("/");
   if (parts.length !== 3) return null;
@@ -47,17 +39,17 @@ export function parseDateDDMMYYYY(raw: string | undefined): string | null {
   return `${yyyy}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")} ${time}`;
 }
 
-// ─── upsert ───────────────────────────────────────────────────────────────────
-
 const UPSERT_SQL = `
 INSERT INTO customers
-  (customer_id, full_name, email, phone_number, country,
+  (customer_id, full_name, email, phone_number, phone_normalized, phone_last9, country,
    registration_date, kyc_completion_date, risk_status)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON DUPLICATE KEY UPDATE
   full_name           = VALUES(full_name),
   email               = VALUES(email),
   phone_number        = VALUES(phone_number),
+  phone_normalized    = VALUES(phone_normalized),
+  phone_last9         = VALUES(phone_last9),
   country             = VALUES(country),
   registration_date   = VALUES(registration_date),
   kyc_completion_date = VALUES(kyc_completion_date),
@@ -66,14 +58,17 @@ ON DUPLICATE KEY UPDATE
 `;
 
 function mapRow(c: RawCustomer): (string | number | null)[] {
+  const phone = str(c.Mobile_Number1);
   return [
     c.Customer_ID,
     str(c.Full_Name),
     str(c.Email_ID),
-    str(c.Mobile_Number1),
+    phone,
+    normalizePhoneValue(phone),
+    getPhoneLast9(phone),
     str(c.sender_country),
-    parseDateDDMMYYYY(c.Record_Insert_DateTime2),  // registration_date
-    parseDateDDMMYYYY(c.Record_Insert_DateTime),   // kyc_completion_date (null = KYC not done)
+    parseDateDDMMYYYY(c.Record_Insert_DateTime2),
+    parseDateDDMMYYYY(c.Record_Insert_DateTime),
     str(c.Risk_status),
   ];
 }
@@ -84,10 +79,6 @@ export interface UpsertResult {
   total: number;
 }
 
-/**
- * Upsert a batch of raw backoffice customers into the CRM customers table.
- * Wraps in a transaction; optionally accepts an existing connection.
- */
 export async function upsertCustomers(
   rawCustomers: RawCustomer[],
   conn?: mysql.PoolConnection
@@ -104,7 +95,6 @@ export async function upsertCustomers(
       if (!raw.Customer_ID) continue;
       const [result] = await c.execute(UPSERT_SQL, mapRow(raw));
       const r = result as mysql.ResultSetHeader;
-      // affectedRows=1 → INSERT, affectedRows=2 → UPDATE
       if (r.affectedRows === 1) inserted++;
       else if (r.affectedRows === 2) updated++;
     }
@@ -119,3 +109,4 @@ export async function upsertCustomers(
 
   return { inserted, updated, total: inserted + updated };
 }
+

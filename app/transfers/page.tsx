@@ -1,11 +1,11 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, ChevronLeft, ChevronRight, Loader2, Search, SearchX } from "lucide-react";
 import { apiFetch } from "@/src/lib/apiFetch";
 
-// ─── types ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface ApiTransfer {
   id: number;
@@ -40,53 +40,53 @@ interface Filters {
   slaFilter: string; // "" | "late_standard" | "late_somalia"
 }
 
-// ─── country flags ────────────────────────────────────────────────────────────
+// â”€â”€â”€ country flags â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const COUNTRY_FLAGS: Record<string, string> = {
-  "United Kingdom": "🇬🇧",
-  Germany: "🇩🇪",
-  France: "🇫🇷",
-  Italy: "🇮🇹",
-  Sweden: "🇸🇪",
-  Netherlands: "🇳🇱",
-  Belgium: "🇧🇪",
-  Norway: "🇳🇴",
-  Denmark: "🇩🇰",
-  Finland: "🇫🇮",
-  Switzerland: "🇨🇭",
-  Austria: "🇦🇹",
-  Ireland: "🇮🇪",
-  Portugal: "🇵🇹",
-  Spain: "🇪🇸",
-  Greece: "🇬🇷",
-  Poland: "🇵🇱",
-  "Czech Republic": "🇨🇿",
-  Hungary: "🇭🇺",
-  Romania: "🇷🇴",
-  "United States": "🇺🇸",
-  USA: "🇺🇸",
-  Canada: "🇨🇦",
-  Australia: "🇦🇺",
-  Somalia: "🇸🇴",
-  Ethiopia: "🇪🇹",
-  Kenya: "🇰🇪",
-  Nigeria: "🇳🇬",
-  Ghana: "🇬🇭",
-  Eritrea: "🇪🇷",
-  Djibouti: "🇩🇯",
-  UAE: "🇦🇪",
-  "Saudi Arabia": "🇸🇦",
-  "South Africa": "🇿🇦",
+  "United Kingdom": "ðŸ‡¬ðŸ‡§",
+  Germany: "ðŸ‡©ðŸ‡ª",
+  France: "ðŸ‡«ðŸ‡·",
+  Italy: "ðŸ‡®ðŸ‡¹",
+  Sweden: "ðŸ‡¸ðŸ‡ª",
+  Netherlands: "ðŸ‡³ðŸ‡±",
+  Belgium: "ðŸ‡§ðŸ‡ª",
+  Norway: "ðŸ‡³ðŸ‡´",
+  Denmark: "ðŸ‡©ðŸ‡°",
+  Finland: "ðŸ‡«ðŸ‡®",
+  Switzerland: "ðŸ‡¨ðŸ‡­",
+  Austria: "ðŸ‡¦ðŸ‡¹",
+  Ireland: "ðŸ‡®ðŸ‡ª",
+  Portugal: "ðŸ‡µðŸ‡¹",
+  Spain: "ðŸ‡ªðŸ‡¸",
+  Greece: "ðŸ‡¬ðŸ‡·",
+  Poland: "ðŸ‡µðŸ‡±",
+  "Czech Republic": "ðŸ‡¨ðŸ‡¿",
+  Hungary: "ðŸ‡­ðŸ‡º",
+  Romania: "ðŸ‡·ðŸ‡´",
+  "United States": "ðŸ‡ºðŸ‡¸",
+  USA: "ðŸ‡ºðŸ‡¸",
+  Canada: "ðŸ‡¨ðŸ‡¦",
+  Australia: "ðŸ‡¦ðŸ‡º",
+  Somalia: "ðŸ‡¸ðŸ‡´",
+  Ethiopia: "ðŸ‡ªðŸ‡¹",
+  Kenya: "ðŸ‡°ðŸ‡ª",
+  Nigeria: "ðŸ‡³ðŸ‡¬",
+  Ghana: "ðŸ‡¬ðŸ‡­",
+  Eritrea: "ðŸ‡ªðŸ‡·",
+  Djibouti: "ðŸ‡©ðŸ‡¯",
+  UAE: "ðŸ‡¦ðŸ‡ª",
+  "Saudi Arabia": "ðŸ‡¸ðŸ‡¦",
+  "South Africa": "ðŸ‡¿ðŸ‡¦",
 };
 
 function flagFor(country: string | null): string {
-  return COUNTRY_FLAGS[country ?? ""] ?? "🌍";
+  return COUNTRY_FLAGS[country ?? ""] ?? "ðŸŒ";
 }
 
-// ─── helpers ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function formatDate(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "â€”";
   return new Date(iso).toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "short",
@@ -95,7 +95,7 @@ function formatDate(iso: string | null): string {
 }
 
 function formatAmount(amount: number | null, currency: string | null): string {
-  if (!amount || !currency) return "—";
+  if (!amount || !currency) return "â€”";
   try {
     return new Intl.NumberFormat("en-GB", {
       style: "currency",
@@ -107,13 +107,13 @@ function formatAmount(amount: number | null, currency: string | null): string {
   }
 }
 
-// ─── status badge ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ status badge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const PROCESSED = new Set(["Completed", "Deposited", "Paid"]);
 const CANCELLED = new Set(["Cancelled", "Cancel", "Rejected"]);
 
 function StatusBadge({ status }: { status: string | null }) {
-  if (!status) return <span className="text-xs text-slate-400">—</span>;
+  if (!status) return <span className="text-xs text-slate-400">â€”</span>;
   if (PROCESSED.has(status)) {
     return (
       <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
@@ -135,7 +135,7 @@ function StatusBadge({ status }: { status: string | null }) {
   );
 }
 
-// ─── filter bar ───────────────────────────────────────────────────────────────
+// â”€â”€â”€ filter bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface FilterBarProps {
   filters: Filters;
@@ -153,7 +153,7 @@ function FilterBar({ filters, onChange, onSlaFilter, countries }: FilterBarProps
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         <input
           type="text"
-          placeholder="Search by ref, name, email, or phone…"
+          placeholder="Search by ref, name, email, or phoneâ€¦"
           value={filters.search}
           onChange={(e) => onChange("search", e.target.value)}
           className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-4 text-sm text-slate-700 shadow-sm placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
@@ -197,7 +197,7 @@ function FilterBar({ filters, onChange, onSlaFilter, countries }: FilterBarProps
               : "border-amber-300 bg-white text-amber-700 hover:bg-amber-50"
           }`}
         >
-          ⚠️ Late Transfers (&gt; 24 Hrs)
+          âš ï¸ Late Transfers (&gt; 24 Hrs)
         </button>
         <button
           onClick={() => onSlaFilter(filters.slaFilter === "late_somalia" ? "" : "late_somalia")}
@@ -207,14 +207,14 @@ function FilterBar({ filters, onChange, onSlaFilter, countries }: FilterBarProps
               : "border-red-300 bg-white text-red-700 hover:bg-red-50"
           }`}
         >
-          🚨 Late Somalia (&gt; 15 Mins)
+          ðŸš¨ Late Somalia (&gt; 15 Mins)
         </button>
       </div>
     </div>
   );
 }
 
-// ─── pagination ───────────────────────────────────────────────────────────────
+// â”€â”€â”€ pagination â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface PaginationProps {
   page: number;
@@ -229,13 +229,13 @@ function Pagination({ page, pages, total, limit, onPage }: PaginationProps) {
   const from = total === 0 ? 0 : (page - 1) * limit + 1;
   const to = Math.min(page * limit, total);
 
-  const nums: (number | "…")[] = [];
+  const nums: (number | "â€¦")[] = [];
   const delta = 2;
   for (let i = 1; i <= pages; i++) {
     if (i === 1 || i === pages || (i >= page - delta && i <= page + delta)) {
       nums.push(i);
-    } else if (nums[nums.length - 1] !== "…") {
-      nums.push("…");
+    } else if (nums[nums.length - 1] !== "â€¦") {
+      nums.push("â€¦");
     }
   }
 
@@ -243,7 +243,7 @@ function Pagination({ page, pages, total, limit, onPage }: PaginationProps) {
   return (
     <div className="flex flex-col items-center gap-3 rounded-2xl border border-slate-200/80 bg-white px-4 py-3 shadow-sm sm:flex-row sm:justify-between">
       <p className="text-xs text-slate-500">
-        Showing {from}–{to} of {total.toLocaleString()} transfers
+        Showing {from}â€“{to} of {total.toLocaleString()} transfers
       </p>
       <div className="flex items-center gap-1">
         <button
@@ -255,9 +255,9 @@ function Pagination({ page, pages, total, limit, onPage }: PaginationProps) {
           <ChevronLeft className="h-4 w-4" />
         </button>
         {nums.map((n, i) =>
-          n === "…" ? (
+          n === "â€¦" ? (
             <span key={`e${i}`} className="px-1 text-xs text-slate-400">
-              …
+              â€¦
             </span>
           ) : (
             <button
@@ -286,7 +286,7 @@ function Pagination({ page, pages, total, limit, onPage }: PaginationProps) {
   );
 }
 
-// ─── mobile card ──────────────────────────────────────────────────────────────
+// â”€â”€â”€ mobile card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function TransferCard({ transfer }: { transfer: ApiTransfer }) {
   const router = useRouter();
@@ -300,7 +300,7 @@ function TransferCard({ transfer }: { transfer: ApiTransfer }) {
           <span className="text-3xl leading-none">{flagFor(transfer.customer_country)}</span>
           <div>
             <p className="text-sm font-semibold text-slate-900">
-              {transfer.full_name ?? "—"}
+              {transfer.full_name ?? "â€”"}
             </p>
             <p className="text-xs text-slate-500">#{transfer.customer_id}</p>
           </div>
@@ -323,7 +323,7 @@ function TransferCard({ transfer }: { transfer: ApiTransfer }) {
       </div>
       <div className="flex items-center justify-between text-xs text-slate-500">
         <span>
-          {flagFor(transfer.destination_country)} {transfer.destination_country ?? "—"}
+          {flagFor(transfer.destination_country)} {transfer.destination_country ?? "â€”"}
         </span>
         <span className="font-semibold text-slate-700">
           {formatAmount(transfer.send_amount, transfer.send_currency)}
@@ -334,7 +334,7 @@ function TransferCard({ transfer }: { transfer: ApiTransfer }) {
   );
 }
 
-// ─── desktop table row ────────────────────────────────────────────────────────
+// â”€â”€â”€ desktop table row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function TransferRow({ transfer }: { transfer: ApiTransfer }) {
   const router = useRouter();
@@ -347,21 +347,21 @@ function TransferRow({ transfer }: { transfer: ApiTransfer }) {
         {formatDate(transfer.created_at)}
       </td>
       <td className="px-3 py-3 font-mono text-xs text-slate-700">
-        {transfer.transaction_ref ?? <span className="italic text-slate-400">—</span>}
+        {transfer.transaction_ref ?? <span className="italic text-slate-400">â€”</span>}
       </td>
       <td className="px-3 py-3 font-mono text-xs text-slate-500">
-        {transfer.data_field_id ?? <span className="italic text-slate-400">—</span>}
+        {transfer.data_field_id ?? <span className="italic text-slate-400">â€”</span>}
       </td>
       <td className="px-3 py-3">
         <div className="flex items-center gap-2">
           <span className="text-xl leading-none">{flagFor(transfer.customer_country)}</span>
           <span className="text-sm font-semibold text-slate-800">
-            {transfer.full_name ?? "—"}
+            {transfer.full_name ?? "â€”"}
           </span>
         </div>
       </td>
       <td className="whitespace-nowrap px-3 py-3 text-sm text-slate-600">
-        {flagFor(transfer.destination_country)} {transfer.destination_country ?? "—"}
+        {flagFor(transfer.destination_country)} {transfer.destination_country ?? "â€”"}
       </td>
       <td className="whitespace-nowrap px-3 py-3 text-sm font-semibold text-slate-700">
         {formatAmount(transfer.send_amount, transfer.send_currency)}
@@ -381,7 +381,7 @@ function TransferRow({ transfer }: { transfer: ApiTransfer }) {
   );
 }
 
-// ─── empty state ──────────────────────────────────────────────────────────────
+// â”€â”€â”€ empty state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function EmptyState() {
   return (
@@ -397,7 +397,7 @@ function EmptyState() {
   );
 }
 
-// ─── page ─────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const LIMIT = 50;
 
@@ -473,7 +473,7 @@ export default function TransfersPage() {
           Transfers
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          {loading ? "Loading…" : `${total.toLocaleString()} transfer${total === 1 ? "" : "s"}`}
+          {loading ? "Loadingâ€¦" : `${total.toLocaleString()} transfer${total === 1 ? "" : "s"}`}
         </p>
       </div>
 
@@ -482,7 +482,7 @@ export default function TransfersPage() {
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-16 text-slate-400">
           <Loader2 className="h-5 w-5 animate-spin" />
-          <span className="text-sm">Loading transfers…</span>
+          <span className="text-sm">Loading transfersâ€¦</span>
         </div>
       ) : transfers.length === 0 ? (
         <EmptyState />
@@ -496,8 +496,8 @@ export default function TransfersPage() {
           </div>
 
           {/* Desktop: table */}
-          <div className="hidden overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm md:block">
-            <table className="w-full table-auto text-left">
+          <div className="hidden overflow-x-auto overflow-y-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm md:block">
+            <table className="min-w-[960px] w-full table-auto text-left">
               <thead>
                 <tr className="bg-slate-50/80 text-xs font-semibold uppercase tracking-wide text-slate-500">
                   <th className="py-3 pl-5 pr-3">Date</th>
@@ -530,3 +530,5 @@ export default function TransfersPage() {
     </div>
   );
 }
+
+

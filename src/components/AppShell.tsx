@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { ReactNode } from "react";
 import { usePathname } from "next/navigation";
@@ -7,6 +7,7 @@ import { AppNavigation } from "@/src/components/AppNavigation";
 import { ProtectedRoute } from "@/src/components/ProtectedRoute";
 import { CallWidget } from "@/src/components/CallWidget";
 import { PostCallModal } from "@/src/components/PostCallModal";
+import { ClientErrorBoundary } from "@/src/components/ClientErrorBoundary";
 
 interface AppShellProps {
   children: ReactNode;
@@ -17,7 +18,6 @@ export function AppShell({ children }: AppShellProps) {
   const isLoginPage = pathname === "/login";
 
   if (isLoginPage) {
-    // Render the login page bare — no chrome, no auth check
     return <>{children}</>;
   }
 
@@ -34,9 +34,18 @@ export function AppShell({ children }: AppShellProps) {
         <main className="px-4 pb-24 pt-5 md:ml-64 md:px-8 md:pb-10 md:pt-7">
           <div className="mx-auto w-full max-w-6xl">{children}</div>
         </main>
-        <CallWidget />
-        <PostCallModal />
+        <ClientErrorBoundary
+          fallback={
+            <div className="fixed bottom-6 right-6 z-[70] rounded-xl border border-red-200 bg-white px-4 py-3 text-xs font-medium text-red-600 shadow-lg">
+              Voice tools are temporarily unavailable. Refresh the page if the problem persists.
+            </div>
+          }
+        >
+          <CallWidget />
+          <PostCallModal />
+        </ClientErrorBoundary>
       </div>
     </ProtectedRoute>
   );
 }
+

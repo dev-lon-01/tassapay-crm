@@ -1,61 +1,54 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/src/lib/db";
 import { requireAuth } from "@/src/lib/auth";
+import { jsonError } from "@/src/lib/httpResponses";
+import { getPhoneLast9, normalizePhoneValue } from "@/src/lib/phoneUtils";
 import { buildCountryFence } from "@/src/lib/regionFence";
+import { buildReferenceSearchPatterns } from "@/src/lib/searchUtils";
 import type { RowDataPacket } from "mysql2";
 
-/**
- * GET /api/customers
- *
- * Returns paginated customers from the local MySQL database.
- * Optional query params:
- *   ?country=        – exact match on country
- *   ?kycStatus=      – "Pending" (IS NULL) | "Complete" (IS NOT NULL)
- *   ?transferStatus= – "Zero" (= 0) | "HasTransfers" (> 0)
- *   ?search=         – LIKE on full_name or customer_id
- *   ?page=           – page number (default: 1)
- *   ?limit=          – records per page (default: 50, max: 200)
- *
- * Response: { data, total, page, limit, pages }
- */
 export async function GET(req: NextRequest) {
   const auth = requireAuth(req);
   if (auth instanceof NextResponse) return auth;
+
   try {
     const { searchParams } = new URL(req.url);
-    const country        = searchParams.get("country");
-    const kycStatus      = searchParams.get("kycStatus");
+    const country = searchParams.get("country");
+    const kycStatus = searchParams.get("kycStatus");
     const transferStatus = searchParams.get("transferStatus");
-    const search           = searchParams.get("search");
-    const referenceSearch  = searchParams.get("reference_search");
-    const phone            = searchParams.get("phone");
-    const page           = Math.max(1, Number(searchParams.get("page") ?? 1));
-    const limit          = Math.min(200, Math.max(1, Number(searchParams.get("limit") ?? 50)));
-    const offset         = (page - 1) * limit;
+    const search = searchParams.get("search");
+    const referenceSearch = searchParams.get("reference_search");
+    const phone = searchParams.get("phone");
+    const page = Math.max(1, Number(searchParams.get("page") ?? 1));
+    const limit = Math.min(200, Math.max(1, Number(searchParams.get("limit") ?? 50)));
+    const offset = (page - 1) * limit;
 
-    // ── Phone lookup for screen pop (returns a single customer or 404) ──────
+    const fence = buildCountryFence(auth.allowed_regions ?? ["UK", "EU"], auth.role === "Admin");
+
     if (phone) {
-      // Strip spaces, dashes, and + from input; also try last-9-digit fallback
-      // to handle E.164 (+447…) vs local (07…) format mismatches
-      const normalized  = phone.replace(/[\s\-+]/g, "");
-      const last9       = normalized.slice(-9);
-      const phoneFence  = buildCountryFence(auth.allowed_regions ?? ["UK", "EU"], auth.role === "Admin");
-      const phoneFenceClause = phoneFence ? `AND ${phoneFence.sql}` : "";
+      const normalized = normalizePhoneValue(phone);
+      const last9 = getPhoneLast9(phone);
+      if (!normalized || !last9) {
+        return jsonError("Not found", 404);
+      }
+      const phoneFenceClause = fence ? `AND ${fence.sql}` : "";
       const [rows] = await pool.execute<RowDataPacket[]>(
         `SELECT customer_id, full_name, email, phone_number, country,
                 registration_date, kyc_completion_date, risk_status,
                 (SELECT COUNT(*) FROM transfers t WHERE t.customer_id = customers.customer_id) AS total_transfers
          FROM   customers
          WHERE  (
-                  REPLACE(REPLACE(REPLACE(phone_number,' ',''),'-',''),'+','') = ?
+                  phone_normalized = ?
+               OR phone_last9 = ?
+               OR REPLACE(REPLACE(REPLACE(phone_number,' ',''),'-',''),'+','') = ?
                OR RIGHT(REPLACE(REPLACE(REPLACE(phone_number,' ',''),'-',''),'+',''), 9) = ?
                )
            ${phoneFenceClause}
          LIMIT 1`,
-        [normalized, last9, ...(phoneFence?.params ?? [])]
+        [normalized, last9, normalized, last9, ...(fence?.params ?? [])]
       );
       if (!Array.isArray(rows) || rows.length === 0) {
-        return NextResponse.json({ error: "Not found" }, { status: 404 });
+        return jsonError("Not found", 404);
       }
       return NextResponse.json(rows[0]);
     }
@@ -82,14 +75,21 @@ export async function GET(req: NextRequest) {
       params.push(`%${search}%`, `%${search}%`);
     }
     if (referenceSearch) {
+      const patterns = buildReferenceSearchPatterns(referenceSearch);
       conditions.push(
-        "EXISTS (SELECT 1 FROM transfers t WHERE t.customer_id = customers.customer_id AND (t.transaction_ref LIKE ? OR t.data_field_id LIKE ?))"
+        `EXISTS (
+           SELECT 1
+           FROM transfers t
+           WHERE t.customer_id = customers.customer_id
+             AND (
+               t.transaction_ref = ? OR t.data_field_id = ?
+               OR t.transaction_ref LIKE ? OR t.data_field_id LIKE ?
+             )
+         )`
       );
-      params.push(`%${referenceSearch}%`, `%${referenceSearch}%`);
+      params.push(patterns.exact, patterns.exact, patterns.prefix, patterns.prefix);
     }
 
-    // ── Region fence (non-Admin only) ─────────────────────────────────────────
-    const fence = buildCountryFence(auth.allowed_regions ?? ["UK", "EU"], auth.role === "Admin");
     if (fence) {
       conditions.push(fence.sql);
       params.push(...fence.params);
@@ -97,13 +97,11 @@ export async function GET(req: NextRequest) {
 
     const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
-    // COUNT for pagination metadata
     const [[{ total }]] = await pool.execute<RowDataPacket[]>(
       `SELECT COUNT(*) AS total FROM customers ${where}`,
       params
     );
 
-    // Paginated data
     const [rows] = await pool.execute<RowDataPacket[]>(
       `SELECT customer_id, full_name, email, phone_number, country,
               registration_date, kyc_completion_date, risk_status,
@@ -122,9 +120,10 @@ export async function GET(req: NextRequest) {
       limit,
       pages: Math.ceil(Number(total) / limit),
     });
-  } catch (err: unknown) {
+  } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[GET /api/customers]", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return jsonError(message, 500);
   }
 }
+

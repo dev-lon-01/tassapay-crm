@@ -1,5 +1,6 @@
-import twilio from "twilio";
+﻿import twilio from "twilio";
 import { pool } from "@/src/lib/db";
+import { getPhoneLast9, normalizePhoneValue } from "@/src/lib/phoneUtils";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
 
 type JsonObject = Record<string, unknown>;
@@ -10,12 +11,15 @@ export interface VoiceInteractionRow extends RowDataPacket {
   agent_id: number | null;
   type: string;
   outcome: string | null;
+  call_status: string | null;
   note: string | null;
   direction: string | null;
   metadata: unknown;
   twilio_call_sid: string | null;
   call_duration_seconds: number | null;
   recording_url: string | null;
+  request_id: string | null;
+  provider_message_id: string | null;
   created_at: string;
   agent_name?: string | null;
 }
@@ -26,6 +30,7 @@ export interface UpsertCallInteractionInput {
   customerId?: string | null;
   agentId?: number | null;
   outcome?: string | null;
+  callStatus?: string | null;
   note?: string | null;
   direction?: "inbound" | "outbound" | null;
   callDurationSeconds?: number | null;
@@ -41,6 +46,15 @@ const JSON_SID_PATHS = [
   "$.legCallSid",
   "$.clientCallSid",
 ];
+
+const INTERACTION_SELECT_SQL = `
+SELECT i.id, i.customer_id, i.agent_id, i.type, i.outcome, i.call_status, i.note,
+       i.direction, i.metadata, i.twilio_call_sid, i.call_duration_seconds,
+       i.recording_url, i.request_id, i.provider_message_id, i.created_at,
+       u.name AS agent_name
+FROM   interactions i
+LEFT JOIN users u ON u.id = i.agent_id
+`;
 
 export function parseTwilioFormBody(text: string): Record<string, string> {
   const params: Record<string, string> = {};
@@ -86,28 +100,6 @@ export function extractSipUsername(value: string): string | null {
   return match ? match[1] : null;
 }
 
-function normalizeDigits(value: string): string {
-  return value.replace(/[\s\-+]/g, "");
-}
-
-function parseMetadata(value: unknown): JsonObject {
-  if (!value) return {};
-  if (typeof value === "string") {
-    try {
-      const parsed = JSON.parse(value) as unknown;
-      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-        ? (parsed as JsonObject)
-        : {};
-    } catch {
-      return {};
-    }
-  }
-  if (typeof value === "object" && !Array.isArray(value)) {
-    return value as JsonObject;
-  }
-  return {};
-}
-
 function cleanMetadata(input: JsonObject | undefined): JsonObject {
   if (!input) return {};
   return Object.fromEntries(
@@ -133,19 +125,22 @@ function buildSidLookupParams(sids: string[]): string[] {
 export async function findCustomerIdByPhone(phone: string | null | undefined): Promise<string | null> {
   if (!phone) return null;
 
-  const normalized = normalizeDigits(phone);
-  if (!normalized) return null;
-  const last9 = normalized.slice(-9);
+  const normalized = normalizePhoneValue(phone);
+  const last9 = getPhoneLast9(phone);
+  if (!normalized || !last9) return null;
 
   const [rows] = await pool.execute<RowDataPacket[]>(
-    `SELECT customer_id FROM customers
-     WHERE  REPLACE(REPLACE(REPLACE(phone_number,' ',''),'-',''),'+','') = ?
+    `SELECT customer_id
+     FROM   customers
+     WHERE  phone_normalized = ?
+        OR  phone_last9 = ?
+        OR  REPLACE(REPLACE(REPLACE(phone_number,' ',''),'-',''),'+','') = ?
         OR  RIGHT(REPLACE(REPLACE(REPLACE(phone_number,' ',''),'-',''),'+',''), 9) = ?
      LIMIT 1`,
-    [normalized, last9]
+    [normalized, last9, normalized, last9]
   );
 
-  return rows.length > 0 ? (rows[0].customer_id as string) : null;
+  return rows.length > 0 ? String(rows[0].customer_id) : null;
 }
 
 export async function findAgentIdByIdentity(identity: string | null | undefined): Promise<number | null> {
@@ -170,14 +165,21 @@ export async function findAgentIdByIdentity(identity: string | null | undefined)
 
 export async function getInteractionById(id: number): Promise<VoiceInteractionRow | null> {
   const [rows] = await pool.execute<VoiceInteractionRow[]>(
-    `SELECT i.id, i.customer_id, i.agent_id, i.type, i.outcome, i.note,
-            i.direction, i.metadata, i.twilio_call_sid, i.call_duration_seconds,
-            i.recording_url, i.created_at, u.name AS agent_name
-     FROM   interactions i
-     LEFT JOIN users u ON u.id = i.agent_id
+    `${INTERACTION_SELECT_SQL}
      WHERE  i.id = ?
      LIMIT 1`,
     [id]
+  );
+
+  return rows[0] ?? null;
+}
+
+export async function getInteractionByRequestId(requestId: string): Promise<VoiceInteractionRow | null> {
+  const [rows] = await pool.execute<VoiceInteractionRow[]>(
+    `${INTERACTION_SELECT_SQL}
+     WHERE  i.request_id = ?
+     LIMIT 1`,
+    [requestId]
   );
 
   return rows[0] ?? null;
@@ -188,11 +190,7 @@ export async function getCallInteractionBySids(sids: string[]): Promise<VoiceInt
   if (uniqueSids.length === 0) return null;
 
   const [rows] = await pool.execute<VoiceInteractionRow[]>(
-    `SELECT i.id, i.customer_id, i.agent_id, i.type, i.outcome, i.note,
-            i.direction, i.metadata, i.twilio_call_sid, i.call_duration_seconds,
-            i.recording_url, i.created_at, u.name AS agent_name
-     FROM   interactions i
-     LEFT JOIN users u ON u.id = i.agent_id
+    `${INTERACTION_SELECT_SQL}
      WHERE  ${buildSidLookupSql("i", uniqueSids.length)}
      ORDER BY i.id DESC
      LIMIT 1`,
@@ -202,62 +200,107 @@ export async function getCallInteractionBySids(sids: string[]): Promise<VoiceInt
   return rows[0] ?? null;
 }
 
+export async function persistVoiceWebhookEvent(input: {
+  source: string;
+  canonicalSid?: string | null;
+  eventType: string;
+  payload: Record<string, unknown>;
+}): Promise<void> {
+  await pool.execute<ResultSetHeader>(
+    `INSERT INTO voice_webhook_events (source, canonical_sid, event_type, payload)
+     VALUES (?, ?, ?, ?)`,
+    [
+      input.source,
+      input.canonicalSid ?? null,
+      input.eventType,
+      JSON.stringify(input.payload),
+    ]
+  );
+}
+
 export async function upsertCallInteraction(input: UpsertCallInteractionInput): Promise<VoiceInteractionRow | null> {
-  const lookupSids = [...new Set([...(input.lookupSids ?? []), input.twilioCallSid ?? ""].filter(Boolean))];
-  const existing = await getCallInteractionBySids(lookupSids);
-
   const incomingMetadata = cleanMetadata(input.metadata);
+  const lookupSids = [...new Set([...(input.lookupSids ?? []), input.twilioCallSid ?? ""].filter(Boolean))];
 
-  if (existing) {
-    const existingMetadata = parseMetadata(existing.metadata);
-    const mergedMetadata = { ...existingMetadata, ...incomingMetadata };
+  const existing = lookupSids.length > 0
+    ? await getCallInteractionBySids(lookupSids)
+    : null;
 
-    await pool.execute<ResultSetHeader>(
-      `UPDATE interactions
-       SET customer_id = ?,
-           agent_id = ?,
-           outcome = ?,
-           note = ?,
-           direction = ?,
-           metadata = ?,
-           twilio_call_sid = ?,
-           call_duration_seconds = ?,
-           recording_url = ?
-       WHERE id = ?`,
+  const canonicalSid = input.twilioCallSid ?? existing?.twilio_call_sid ?? lookupSids[0] ?? null;
+  const metadataJson = Object.keys(incomingMetadata).length > 0
+    ? JSON.stringify(incomingMetadata)
+    : null;
+
+  if (!canonicalSid && !existing) {
+    const [result] = await pool.execute<ResultSetHeader>(
+      `INSERT INTO interactions
+         (customer_id, agent_id, type, outcome, call_status, note, direction, metadata,
+          twilio_call_sid, call_duration_seconds, recording_url)
+       VALUES (?, ?, 'Call', ?, ?, ?, ?, ?, NULL, ?, ?)`,
       [
-        input.customerId !== undefined ? input.customerId : existing.customer_id,
-        input.agentId !== undefined ? input.agentId : existing.agent_id,
-        input.outcome !== undefined ? input.outcome : existing.outcome,
-        input.note !== undefined ? input.note : existing.note,
-        input.direction !== undefined ? input.direction : existing.direction,
-        Object.keys(mergedMetadata).length > 0 ? JSON.stringify(mergedMetadata) : null,
-        input.twilioCallSid ?? existing.twilio_call_sid,
-        input.callDurationSeconds !== undefined ? input.callDurationSeconds : existing.call_duration_seconds,
-        input.recordingUrl !== undefined ? input.recordingUrl : existing.recording_url,
-        existing.id,
+        input.customerId ?? null,
+        input.agentId ?? null,
+        input.outcome ?? null,
+        input.callStatus ?? null,
+        input.note ?? null,
+        input.direction ?? null,
+        metadataJson,
+        input.callDurationSeconds ?? null,
+        input.recordingUrl ?? null,
       ]
     );
-
-    return getInteractionById(existing.id);
+    return getInteractionById(result.insertId);
   }
 
-  const [result] = await pool.execute<ResultSetHeader>(
+  await pool.execute<ResultSetHeader>(
     `INSERT INTO interactions
-       (customer_id, agent_id, type, outcome, note, direction, metadata,
+       (customer_id, agent_id, type, outcome, call_status, note, direction, metadata,
         twilio_call_sid, call_duration_seconds, recording_url)
-     VALUES (?, ?, 'Call', ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, 'Call', ?, ?, ?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       customer_id = COALESCE(VALUES(customer_id), customer_id),
+       agent_id = COALESCE(VALUES(agent_id), agent_id),
+       outcome = COALESCE(VALUES(outcome), outcome),
+       call_status = COALESCE(VALUES(call_status), call_status),
+       note = COALESCE(VALUES(note), note),
+       direction = COALESCE(VALUES(direction), direction),
+       metadata = CASE
+         WHEN VALUES(metadata) IS NULL THEN metadata
+         WHEN metadata IS NULL THEN VALUES(metadata)
+         ELSE JSON_MERGE_PATCH(metadata, VALUES(metadata))
+       END,
+       call_duration_seconds = COALESCE(VALUES(call_duration_seconds), call_duration_seconds),
+       recording_url = COALESCE(VALUES(recording_url), recording_url)`,
     [
-      input.customerId ?? null,
-      input.agentId ?? null,
-      input.outcome ?? null,
-      input.note ?? null,
-      input.direction ?? null,
-      Object.keys(incomingMetadata).length > 0 ? JSON.stringify(incomingMetadata) : null,
-      input.twilioCallSid ?? lookupSids[0] ?? null,
-      input.callDurationSeconds ?? null,
-      input.recordingUrl ?? null,
+      input.customerId ?? existing?.customer_id ?? null,
+      input.agentId ?? existing?.agent_id ?? null,
+      input.outcome ?? existing?.outcome ?? null,
+      input.callStatus ?? existing?.call_status ?? null,
+      input.note ?? existing?.note ?? null,
+      input.direction ?? (existing?.direction as "inbound" | "outbound" | null | undefined) ?? null,
+      metadataJson,
+      canonicalSid,
+      input.callDurationSeconds ?? existing?.call_duration_seconds ?? null,
+      input.recordingUrl ?? existing?.recording_url ?? null,
     ]
   );
 
-  return getInteractionById(result.insertId);
+  return canonicalSid ? getCallInteractionBySids([canonicalSid, ...lookupSids]) : existing;
 }
+
+export async function getFreshVoiceAgentRows(ttlSeconds: number): Promise<RowDataPacket[]> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT id, sip_username
+     FROM   users
+     WHERE  voice_available = 1
+       AND  voice_last_seen_at IS NOT NULL
+       AND  voice_last_seen_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? SECOND)
+     ORDER BY id ASC`,
+    [ttlSeconds]
+  );
+  return rows;
+}
+
+
+
+

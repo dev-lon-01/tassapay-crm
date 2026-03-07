@@ -1,100 +1,149 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import twilio from "twilio";
 import { pool } from "@/src/lib/db";
 import { normalizePhone } from "@/src/lib/phoneUtils";
 import { requireAuth } from "@/src/lib/auth";
+import {
+  authorizeCustomerWriteAccess,
+  resolveActorAgentId,
+} from "@/src/lib/authorization";
+import { jsonError } from "@/src/lib/httpResponses";
+import {
+  ensureObject,
+  optionalString,
+  parseJsonText,
+  RequestValidationError,
+  requireString,
+  requireUuid,
+} from "@/src/lib/requestValidation";
+import {
+  getInteractionById,
+  getInteractionByRequestId,
+} from "@/src/lib/voiceCallState";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
 
-/**
- * POST /api/communicate/sms
- *
- * Payload: { customerId, agentId?, message }
- *
- * 1. Look up customer phone_number from DB
- * 2. Send SMS via Twilio
- * 3. INSERT interaction (type='SMS', outcome='Delivered', note=message)
- * 4. Return the new interaction row (for immediate timeline update)
- */
+interface SmsPayload {
+  customerId: string;
+  requestId: string;
+  actorAgentId: number;
+  overridePhone: string | null;
+  message: string;
+}
+
+function validatePayload(rawBody: string, auth: Parameters<typeof resolveActorAgentId>[0]): SmsPayload {
+  const body = ensureObject(parseJsonText(rawBody));
+
+  return {
+    customerId: requireString(body.customerId, "customerId", { maxLength: 50 }),
+    requestId: requireUuid(body.requestId, "requestId"),
+    actorAgentId: resolveActorAgentId(auth, body.agentId),
+    overridePhone: optionalString(body.overridePhone, "overridePhone", { maxLength: 50, emptyToNull: true }) ?? null,
+    message: requireString(body.message, "message", { maxLength: 1600 }),
+  };
+}
+
 export async function POST(req: NextRequest) {
   const auth = requireAuth(req);
   if (auth instanceof NextResponse) return auth;
-  try {
-    const body = await req.json();
-    const { customerId, agentId = null, overridePhone, message } = body as {
-      customerId: string;
-      agentId?: number | null;
-      overridePhone?: string;
-      message: string;
-    };
 
-    if (!customerId || !message?.trim()) {
-      return NextResponse.json(
-        { error: "customerId and message are required" },
-        { status: 400 }
-      );
+  try {
+    const rawBody = await req.text();
+    const payload = validatePayload(rawBody, auth);
+
+    const access = await authorizeCustomerWriteAccess(payload.customerId, auth);
+    if (access instanceof NextResponse) return access;
+
+    const existing = await getInteractionByRequestId(payload.requestId);
+    if (existing) {
+      return NextResponse.json(existing, { status: 200 });
     }
 
-    // ── 1. Fetch customer phone ──────────────────────────────────────────────
     const [customerRows] = await pool.execute<RowDataPacket[]>(
-      "SELECT phone_number, country, full_name FROM customers WHERE customer_id = ? LIMIT 1",
-      [customerId]
+      "SELECT phone_number, country FROM customers WHERE customer_id = ? LIMIT 1",
+      [payload.customerId]
     );
 
     if (!customerRows.length) {
-      return NextResponse.json({ error: "Customer not found" }, { status: 404 });
+      return jsonError("Customer not found", 404);
     }
 
-    const rawPhone = overridePhone?.trim() || (customerRows[0].phone_number as string | null);
-
+    const rawPhone = payload.overridePhone || (customerRows[0].phone_number as string | null);
     if (!rawPhone) {
-      return NextResponse.json(
-        { error: "Customer has no phone number on record" },
-        { status: 422 }
-      );
+      return jsonError("Customer has no phone number on record", 422);
     }
 
-    // Normalise to E.164 using country-aware dial code lookup
     const toNumber = normalizePhone(rawPhone, customerRows[0].country as string | null);
-
-    // ── 2. Send via Twilio ───────────────────────────────────────────────────
-    // UK and France support alphanumeric sender IDs; all other countries use
-    // the registered Twilio phone number.
-    const ALPHA_PREFIXES = ["+44", "+33"];
-    const fromSender = ALPHA_PREFIXES.some((p) => toNumber.startsWith(p))
+    const alphaPrefixes = ["+44", "+33"];
+    const fromSender = alphaPrefixes.some((prefix) => toNumber.startsWith(prefix))
       ? "TASSAPAY"
       : process.env.TWILIO_FROM_NUMBER!;
+
+    let interactionId: number;
+    try {
+      const [insertResult] = await pool.execute<ResultSetHeader>(
+        `INSERT INTO interactions (customer_id, agent_id, type, direction, outcome, note, metadata, request_id)
+         VALUES (?, ?, 'SMS', 'outbound', 'Queued', ?, ?, ?)`,
+        [
+          payload.customerId,
+          payload.actorAgentId,
+          payload.message,
+          JSON.stringify({ channel: "sms", to: toNumber, from: fromSender }),
+          payload.requestId,
+        ]
+      );
+      interactionId = insertResult.insertId;
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      if (code === "ER_DUP_ENTRY") {
+        const duplicate = await getInteractionByRequestId(payload.requestId);
+        if (duplicate) {
+          return NextResponse.json(duplicate, { status: 200 });
+        }
+      }
+      throw err;
+    }
 
     const client = twilio(
       process.env.TWILIO_ACCOUNT_SID!,
       process.env.TWILIO_AUTH_TOKEN!
     );
 
-    await client.messages.create({
-      body: message.trim(),
-      from: fromSender,
-      to: toNumber,
-    });
+    try {
+      const message = await client.messages.create({
+        body: payload.message,
+        from: fromSender,
+        to: toNumber,
+      });
 
-    // ── 3. Log interaction ───────────────────────────────────────────────────
-    const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO interactions (customer_id, agent_id, type, direction, outcome, note)
-       VALUES (?, ?, 'SMS', 'outbound', 'Delivered', ?)`,
-      [customerId, agentId, message.trim()]
-    );
+      await pool.execute(
+        `UPDATE interactions
+         SET outcome = 'Delivered', provider_message_id = ?
+         WHERE id = ?`,
+        [message.sid, interactionId]
+      );
+    } catch (err) {
+      await pool.execute(
+        `UPDATE interactions
+         SET outcome = 'Failed'
+         WHERE id = ?`,
+        [interactionId]
+      );
+      throw err;
+    }
 
-    const [interactionRows] = await pool.execute<RowDataPacket[]>(
-      `SELECT i.id, i.customer_id, i.agent_id, i.type, i.outcome, i.note,
-              i.created_at, u.name AS agent_name
-       FROM   interactions i
-       LEFT JOIN users u ON u.id = i.agent_id
-       WHERE  i.id = ?`,
-      [result.insertId]
-    );
+    const interaction = await getInteractionById(interactionId);
+    if (!interaction) {
+      return jsonError("Interaction not found", 500);
+    }
 
-    return NextResponse.json(interactionRows[0], { status: 201 });
+    return NextResponse.json(interaction, { status: 201 });
   } catch (err) {
+    if (err instanceof RequestValidationError) {
+      return jsonError(err.message, err.status, err.issues);
+    }
     const message = err instanceof Error ? err.message : String(err);
     console.error("[POST /api/communicate/sms]", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return jsonError(message, 500);
   }
 }
+

@@ -1,135 +1,207 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 import { pool } from "@/src/lib/db";
 import { requireAuth } from "@/src/lib/auth";
+import {
+  authorizeCustomerWriteAccess,
+  resolveActorAgentId,
+} from "@/src/lib/authorization";
 import { BeneficiaryIssueEmail } from "@/emails/BeneficiaryIssueEmail";
 import { GeneralEmail } from "@/emails/GeneralEmail";
+import { jsonError } from "@/src/lib/httpResponses";
+import {
+  ensureObject,
+  optionalInteger,
+  optionalString,
+  parseJsonText,
+  RequestValidationError,
+  requireString,
+  requireUuid,
+} from "@/src/lib/requestValidation";
+import {
+  getInteractionById,
+  getInteractionByRequestId,
+} from "@/src/lib/voiceCallState";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
 
-/**
- * POST /api/communicate/email
- *
- * Payload: { customerId, agentId?, overrideEmail?, subject, message,
- *            templateId?, templateData? }
- *
- * 1. Look up customer email from DB
- * 2. Send transactional email via Resend
- *    – templateId === 6 ("Beneficiary Information Update Required"):
- *        renders BeneficiaryIssueEmail React component with templateData
- *    – all other templates: wraps message in safe HTML
- * 3. INSERT interaction (type='Email', outcome='Delivered', note='Subject: …\n\nBody: …')
- * 4. Return the new interaction row + Resend message id
- */
-
-// Template id: 6 = "Beneficiary Information Update Required"
 const BENEFICIARY_TEMPLATE_ID = 6;
 
 const resend = new Resend(process.env.RESEND_API_KEY!);
 const FROM = `${process.env.RESEND_FROM_NAME ?? "TassaPay"} <${process.env.RESEND_FROM_EMAIL ?? "noreply@tassapay.com"}>`;
 
+interface EmailPayload {
+  customerId: string;
+  requestId: string;
+  actorAgentId: number;
+  overrideEmail: string | null;
+  subject: string;
+  message: string;
+  templateId: number | null;
+  templateData: { transferId?: string; amount?: string } | null;
+}
+
+function validatePayload(rawBody: string, auth: Parameters<typeof resolveActorAgentId>[0]): EmailPayload {
+  const body = ensureObject(parseJsonText(rawBody));
+  const templateDataValue = body.templateData;
+  let templateData: { transferId?: string; amount?: string } | null = null;
+
+  if (templateDataValue !== undefined && templateDataValue !== null) {
+    const parsedTemplateData = ensureObject(templateDataValue, "templateData");
+    templateData = {
+      transferId: optionalString(parsedTemplateData.transferId, "templateData.transferId", { maxLength: 100 }) ?? undefined,
+      amount: optionalString(parsedTemplateData.amount, "templateData.amount", { maxLength: 100 }) ?? undefined,
+    };
+  }
+
+  return {
+    customerId: requireString(body.customerId, "customerId", { maxLength: 50 }),
+    requestId: requireUuid(body.requestId, "requestId"),
+    actorAgentId: resolveActorAgentId(auth, body.agentId),
+    overrideEmail: optionalString(body.overrideEmail, "overrideEmail", { maxLength: 255, emptyToNull: true }) ?? null,
+    subject: requireString(body.subject, "subject", { maxLength: 255 }),
+    message: requireString(body.message, "message", { maxLength: 10000 }),
+    templateId: optionalInteger(body.templateId, "templateId") ?? null,
+    templateData,
+  };
+}
+
+async function getCustomerEmailContext(customerId: string) {
+  const [customerRows] = await pool.execute<RowDataPacket[]>(
+    "SELECT email, full_name FROM customers WHERE customer_id = ? LIMIT 1",
+    [customerId]
+  );
+
+  if (!customerRows.length) {
+    return null;
+  }
+
+  return {
+    email: (customerRows[0].email as string | null) ?? null,
+    fullName: (customerRows[0].full_name as string | null) ?? "",
+  };
+}
+
 export async function POST(req: NextRequest) {
   const auth = requireAuth(req);
   if (auth instanceof NextResponse) return auth;
+
   try {
-    const body = await req.json();
-    const {
-      customerId,
-      agentId = null,
-      overrideEmail,
-      subject,
-      message,
-      templateId,
-      templateData,
-    } = body as {
-      customerId: string;
-      agentId?: number | null;
-      overrideEmail?: string;
-      subject: string;
-      message: string;
-      templateId?: number;
-      templateData?: { transferId?: string; amount?: string };
-    };
+    const rawBody = await req.text();
+    const payload = validatePayload(rawBody, auth);
 
-    if (!customerId || !subject?.trim() || !message?.trim()) {
+    const access = await authorizeCustomerWriteAccess(payload.customerId, auth);
+    if (access instanceof NextResponse) return access;
+
+    const existing = await getInteractionByRequestId(payload.requestId);
+    if (existing) {
       return NextResponse.json(
-        { error: "customerId, subject, and message are required" },
-        { status: 400 }
+        { ...existing, messageId: existing.provider_message_id },
+        { status: 200 }
       );
     }
 
-    // ── 1. Fetch customer email ──────────────────────────────────────────────
-    const [customerRows] = await pool.execute<RowDataPacket[]>(
-      "SELECT email, full_name FROM customers WHERE customer_id = ? LIMIT 1",
-      [customerId]
-    );
-
-    if (!customerRows.length) {
-      return NextResponse.json({ error: "Customer not found" }, { status: 404 });
+    const customer = await getCustomerEmailContext(payload.customerId);
+    if (!customer) {
+      return jsonError("Customer not found", 404);
     }
 
-    const email = overrideEmail?.trim() || (customerRows[0].email as string | null);
-
+    const email = payload.overrideEmail || customer.email;
     if (!email) {
-      return NextResponse.json(
-        { error: "Customer has no email address on record" },
-        { status: 422 }
-      );
+      return jsonError("Customer has no email address on record", 422);
     }
 
-    const fullName = (customerRows[0].full_name as string | null) ?? "";
+    const isBeneficiaryTemplate = payload.templateId === BENEFICIARY_TEMPLATE_ID;
+    const note = `Subject: ${payload.subject}\n\nBody: ${payload.message}`;
+    const metadata = JSON.stringify({
+      channel: "email",
+      to: email,
+      subject: payload.subject,
+      templateId: payload.templateId,
+    });
 
-    // ── 2. Send via Resend ───────────────────────────────────────────────────
-    const isBeneficiaryTemplate = templateId === BENEFICIARY_TEMPLATE_ID;
+    let interactionId: number;
+    try {
+      const [insertResult] = await pool.execute<ResultSetHeader>(
+        `INSERT INTO interactions (customer_id, agent_id, type, outcome, note, metadata, request_id)
+         VALUES (?, ?, 'Email', 'Queued', ?, ?, ?)`,
+        [
+          payload.customerId,
+          payload.actorAgentId,
+          note,
+          metadata,
+          payload.requestId,
+        ]
+      );
+      interactionId = insertResult.insertId;
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      if (code === "ER_DUP_ENTRY") {
+        const duplicate = await getInteractionByRequestId(payload.requestId);
+        if (duplicate) {
+          return NextResponse.json(
+            { ...duplicate, messageId: duplicate.provider_message_id },
+            { status: 200 }
+          );
+        }
+      }
+      throw err;
+    }
 
     const sendPayload = isBeneficiaryTemplate
       ? {
           from: FROM,
           to: [email],
-          subject: subject.trim(),
+          subject: payload.subject,
           react: BeneficiaryIssueEmail({
-            customerName: fullName || "Valued Customer",
-            transferId: templateData?.transferId ?? "[Transfer ID]",
-            amount: templateData?.amount ?? "[Amount]",
+            customerName: customer.fullName || "Valued Customer",
+            transferId: payload.templateData?.transferId ?? "[Transfer ID]",
+            amount: payload.templateData?.amount ?? "[Amount]",
           }),
         }
       : {
           from: FROM,
           to: [email],
-          subject: subject.trim(),
-          react: GeneralEmail({ subject: subject.trim(), message: message.trim() }),
+          subject: payload.subject,
+          react: GeneralEmail({ subject: payload.subject, message: payload.message }),
         };
 
     const { data, error: sendError } = await resend.emails.send(sendPayload);
 
     if (sendError) {
+      await pool.execute(
+        `UPDATE interactions
+         SET outcome = 'Failed'
+         WHERE id = ?`,
+        [interactionId]
+      );
       console.error("[POST /api/communicate/email] Resend error:", sendError);
-      return NextResponse.json({ error: sendError.message }, { status: 502 });
+      return jsonError(sendError.message, 502);
     }
 
     const messageId = data?.id ?? null;
 
-    // ── 3. Log interaction ───────────────────────────────────────────────────
-    const note = `Subject: ${subject.trim()}\n\nBody: ${message.trim()}`;
-
-    const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO interactions (customer_id, agent_id, type, outcome, note)
-       VALUES (?, ?, 'Email', 'Delivered', ?)`,
-      [customerId, agentId, note]
+    await pool.execute(
+      `UPDATE interactions
+       SET outcome = 'Delivered', provider_message_id = ?
+       WHERE id = ?`,
+      [messageId, interactionId]
     );
 
-    const [interactionRows] = await pool.execute<RowDataPacket[]>(
-      `SELECT i.id, i.customer_id, i.agent_id, i.type, i.outcome, i.note,
-              i.created_at, u.name AS agent_name
-       FROM   interactions i
-       LEFT JOIN users u ON u.id = i.agent_id
-       WHERE  i.id = ?`,
-      [result.insertId]
-    );
+    const interaction = await getInteractionById(interactionId);
+    if (!interaction) {
+      return jsonError("Interaction not found", 500);
+    }
 
-    return NextResponse.json({ ...interactionRows[0], messageId }, { status: 201 });
+    return NextResponse.json({ ...interaction, messageId }, { status: 201 });
   } catch (err) {
+    if (err instanceof RequestValidationError) {
+      return jsonError(err.message, err.status, err.issues);
+    }
     const errMsg = err instanceof Error ? err.message : String(err);
     console.error("[POST /api/communicate/email]", errMsg);
-    return NextResponse.json({ error: errMsg }, { status: 500 });
+    return jsonError(errMsg, 500);
   }
 }
+
+
+

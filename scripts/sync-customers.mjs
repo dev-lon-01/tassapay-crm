@@ -1,4 +1,4 @@
-/**
+﻿/**
  * scripts/sync-customers.mjs
  *
  * Pulls ALL customers from TassaPay API and upserts them into MySQL.
@@ -17,7 +17,7 @@ import mysql from "mysql2/promise";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, "../.env.local") });
 
-// ─── CLI args ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€ CLI args â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const args = process.argv.slice(2);
 function getArg(flag) {
@@ -35,7 +35,7 @@ const defaultFrom = new Date(); defaultFrom.setDate(defaultFrom.getDate() - 30);
 const fromdate = getArg("--from") ?? fmtDate(defaultFrom);
 const todate   = getArg("--to")   ?? fmtDate(today);
 
-// ─── API helpers ──────────────────────────────────────────────────────────────
+// â”€â”€â”€ API helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const BASE = "https://tassapay.co.uk/backoffice";
 const HEADERS = {
@@ -49,12 +49,12 @@ function parseSetCookies(headers) {
   return r;
 }
 
-// ─── DB upsert ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ DB upsert â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function str(v)  { if (!v || !String(v).trim()) return null; return String(v).trim(); }
 
 /**
- * Convert "DD/MM/YYYY HH:mm:ss" → "YYYY-MM-DD HH:mm:ss", null for empty.
+ * Convert "DD/MM/YYYY HH:mm:ss" â†’ "YYYY-MM-DD HH:mm:ss", null for empty.
  */
 function parseDate(raw) {
   if (!raw || !raw.trim()) return null;
@@ -66,28 +66,44 @@ function parseDate(raw) {
   return `${yyyy}-${mm.padStart(2,"0")}-${dd.padStart(2,"0")} ${timePart ?? "00:00:00"}`;
 }
 
+function normalizePhoneValue(phone) {
+  if (!phone) return null;
+  const digits = String(phone).replace(/[^\d]/g, "");
+  return digits.length > 0 ? digits : null;
+}
+
+function getPhoneLast9(phone) {
+  const normalized = normalizePhoneValue(phone);
+  return normalized ? normalized.slice(-9) : null;
+}
+
 function mapRow(c) {
+  const phone = str(c.Mobile_Number1);
   return [
     c.Customer_ID,
     str(c.Full_Name),
     str(c.Email_ID),
-    str(c.Mobile_Number1),
+    phone,
+    normalizePhoneValue(phone),
+    getPhoneLast9(phone),
     str(c.sender_country),
-    parseDate(c.Record_Insert_DateTime2),  // registration_date
-    parseDate(c.Record_Insert_DateTime),   // kyc_completion_date (null = KYC not done)
+    parseDate(c.Record_Insert_DateTime2),
+    parseDate(c.Record_Insert_DateTime),
     str(c.Risk_status),
   ];
 }
 
 const UPSERT_SQL = `
 INSERT INTO customers
-  (customer_id, full_name, email, phone_number, country,
+  (customer_id, full_name, email, phone_number, phone_normalized, phone_last9, country,
    registration_date, kyc_completion_date, risk_status)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON DUPLICATE KEY UPDATE
   full_name           = VALUES(full_name),
   email               = VALUES(email),
   phone_number        = VALUES(phone_number),
+  phone_normalized    = VALUES(phone_normalized),
+  phone_last9         = VALUES(phone_last9),
   country             = VALUES(country),
   registration_date   = VALUES(registration_date),
   kyc_completion_date = VALUES(kyc_completion_date),
@@ -95,21 +111,21 @@ ON DUPLICATE KEY UPDATE
   synced_at           = CURRENT_TIMESTAMP
 `;
 
-// ─── main ─────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ main â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-console.log(`\n\x1b[1mTassaPay → MySQL sync\x1b[0m`);
-console.log(`Date range: ${fromdate} → ${todate}\n`);
+console.log(`\n\x1b[1mTassaPay â†’ MySQL sync\x1b[0m`);
+console.log(`Date range: ${fromdate} â†’ ${todate}\n`);
 
 // 1. Login
-process.stdout.write("Logging in…  ");
+process.stdout.write("Logging inâ€¦  ");
 const lr = await fetch(`${BASE}/LoginHandler.ashx?Task=1`, {
   method: "POST",
   headers: { ...HEADERS, "content-type": "application/json; charset=UTF-8", referer: "https://tassapay.co.uk/backoffice/login" },
   body: JSON.stringify({ Param: [{ username: process.env.TASSAPAY_USERNAME, password: process.env.TASSAPAY_PASSWORD, BranchKey: process.env.TASSAPAY_BRANCH_KEY, reCaptcha: "", remcondition: true }] }),
 });
 const ld = (await lr.json())[0];
-if (ld.Status !== "0") { console.error(`FAILED – ${ld.ErrorMessage}`); process.exit(1); }
-console.log(`\x1b[32m✓\x1b[0m  (${ld.Name})`);
+if (ld.Status !== "0") { console.error(`FAILED â€“ ${ld.ErrorMessage}`); process.exit(1); }
+console.log(`\x1b[32mâœ“\x1b[0m  (${ld.Name})`);
 
 const cookieHeader = [
   `username=${encodeURIComponent(ld.E_User_Nm)}`,
@@ -120,7 +136,7 @@ const cookieHeader = [
 ].join("; ");
 
 // 2. Fetch customers
-process.stdout.write("Fetching customers…  ");
+process.stdout.write("Fetching customersâ€¦  ");
 const sr = await fetch(`${BASE}/CustomerHandler.ashx/?Task=search`, {
   method: "POST",
   headers: { ...HEADERS, "content-type": "application/json;", referer: "https://tassapay.co.uk/backoffice/customers", cookie: cookieHeader },
@@ -128,10 +144,10 @@ const sr = await fetch(`${BASE}/CustomerHandler.ashx/?Task=search`, {
 });
 const customers = await sr.json();
 if (!Array.isArray(customers)) { console.error("Unexpected response:", JSON.stringify(customers).slice(0, 200)); process.exit(1); }
-console.log(`\x1b[32m✓\x1b[0m  ${customers.length} records`);
+console.log(`\x1b[32mâœ“\x1b[0m  ${customers.length} records`);
 
 // 3. Connect to DB
-process.stdout.write("Connecting to MySQL…  ");
+process.stdout.write("Connecting to MySQLâ€¦  ");
 const db = await mysql.createConnection({
   host: process.env.DB_HOST ?? "localhost",
   port: Number(process.env.DB_PORT ?? 3306),
@@ -139,7 +155,7 @@ const db = await mysql.createConnection({
   password: process.env.DB_PASSWORD ?? "",
   database: process.env.DB_NAME ?? "tassapay_crm",
 });
-console.log("\x1b[32m✓\x1b[0m");
+console.log("\x1b[32mâœ“\x1b[0m");
 
 // 4. Log sync start
 const [logResult] = await db.execute(
@@ -165,7 +181,7 @@ try {
     process.stdout.write(".");
   }
   await db.commit();
-  console.log(" \x1b[32m✓\x1b[0m");
+  console.log(" \x1b[32mâœ“\x1b[0m");
 } catch (err) {
   await db.rollback();
   await db.execute(
@@ -189,3 +205,5 @@ console.log(`\n\x1b[32m\x1b[1mSync complete.\x1b[0m`);
 console.log(`  Inserted : ${inserted}`);
 console.log(`  Updated  : ${updated}`);
 console.log(`  Total    : ${inserted + updated}\n`);
+
+

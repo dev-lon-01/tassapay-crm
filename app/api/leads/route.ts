@@ -1,43 +1,34 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/src/lib/db";
 import { requireAuth } from "@/src/lib/auth";
-import { buildCountryFence } from "@/src/lib/regionFence";
+import { buildCountryFence, getAllowedCountries } from "@/src/lib/regionFence";
+import { jsonError } from "@/src/lib/httpResponses";
+import { getPhoneLast9, normalizePhoneValue } from "@/src/lib/phoneUtils";
+import {
+  ensureObject,
+  optionalInteger,
+  optionalString,
+  optionalStringArray,
+  parseJsonText,
+  RequestValidationError,
+  requireString,
+} from "@/src/lib/requestValidation";
 import type { RowDataPacket } from "mysql2";
-
-/**
- * GET /api/leads
- *
- * Returns leads (customers where is_lead = 1).
- * Query params:
- *   ?stage=          – lead_stage value (or 'all')
- *   ?country=        – exact country match
- *   ?assigned_agent= – agent id (int), or 'all'
- *   ?search=         – LIKE on full_name or phone_number
- *   ?labels=         – comma-separated labels to filter by (JSON_CONTAINS)
- *   ?show_dead=      – '1' to include Dead stage
- *
- * POST /api/leads
- *
- * Creates a new lead record.
- * Body: { name, phone, country, assigned_agent_id }
- */
-
-// ─── GET ─────────────────────────────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
   const auth = requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
   const { searchParams } = new URL(req.url);
-  const stage          = searchParams.get("stage");
-  const country        = searchParams.get("country");
-  const assignedAgent  = searchParams.get("assigned_agent");
-  const search         = searchParams.get("search");
-  const labelsParam    = searchParams.get("labels");
-  const showDead       = searchParams.get("show_dead") === "1";
-  const page           = Math.max(1, Number(searchParams.get("page") ?? 1));
-  const limit          = Math.min(200, Math.max(1, Number(searchParams.get("limit") ?? 50)));
-  const offset         = (page - 1) * limit;
+  const stage = searchParams.get("stage");
+  const country = searchParams.get("country");
+  const assignedAgent = searchParams.get("assigned_agent");
+  const search = searchParams.get("search");
+  const labelsParam = searchParams.get("labels");
+  const showDead = searchParams.get("show_dead") === "1";
+  const page = Math.max(1, Number(searchParams.get("page") ?? 1));
+  const limit = Math.min(200, Math.max(1, Number(searchParams.get("limit") ?? 50)));
+  const offset = (page - 1) * limit;
 
   const conditions: string[] = ["is_lead = 1"];
   const params: (string | number)[] = [];
@@ -69,7 +60,7 @@ export async function GET(req: NextRequest) {
   }
 
   if (labelsParam) {
-    const labels = labelsParam.split(",").map((l) => l.trim()).filter(Boolean);
+    const labels = labelsParam.split(",").map((label) => label.trim()).filter(Boolean);
     if (labels.length > 0) {
       const labelConditions = labels.map(() => "JSON_CONTAINS(labels, JSON_QUOTE(?))");
       conditions.push(`(${labelConditions.join(" OR ")})`);
@@ -77,7 +68,6 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Region fence for non-admins
   const fence = buildCountryFence(auth.allowed_regions ?? ["UK", "EU"], auth.role === "Admin");
   if (fence) {
     conditions.push(fence.sql);
@@ -107,7 +97,7 @@ export async function GET(req: NextRequest) {
     );
 
     return NextResponse.json({
-      data:  rows,
+      data: rows,
       total: Number(total),
       page,
       limit,
@@ -116,43 +106,45 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[GET /api/leads]", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return jsonError(message, 500);
   }
 }
-
-// ─── POST ────────────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
   const auth = requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
-  let body: { name?: string; phone?: string; country?: string; email?: string | null; assigned_agent_id?: number | null; labels?: string[] };
   try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
-  }
+    const body = ensureObject(parseJsonText(await req.text()));
+    const name = requireString(body.name, "name", { maxLength: 255 });
+    const phone = requireString(body.phone, "phone", { maxLength: 50 });
+    const country = requireString(body.country, "country", { maxLength: 100 });
+    const email = optionalString(body.email, "email", { maxLength: 255, emptyToNull: true }) ?? null;
+    const assignedAgentId = optionalInteger(body.assigned_agent_id, "assigned_agent_id") ?? null;
+    const labels = optionalStringArray(body.labels, "labels") ?? [];
 
-  const { name, phone, country, assigned_agent_id } = body;
+    if (auth.role !== "Admin") {
+      const allowedCountries = getAllowedCountries(auth.allowed_regions ?? ["UK", "EU"]);
+      if (!allowedCountries.includes(country)) {
+        return jsonError("Forbidden", 403);
+      }
+    }
 
-  if (!name?.trim()) return NextResponse.json({ error: "Name is required" }, { status: 400 });
-  if (!phone?.trim()) return NextResponse.json({ error: "Phone is required" }, { status: 400 });
-  if (!country?.trim()) return NextResponse.json({ error: "Country is required" }, { status: 400 });
+    const phoneNormalized = normalizePhoneValue(phone);
+    const phoneLast9 = getPhoneLast9(phone);
+    if (!phoneNormalized || !phoneLast9) {
+      return jsonError("Phone is required", 400);
+    }
 
-  // Normalize phone for duplicate check
-  const phoneNorm = phone.replace(/[\s\-]/g, "");
-  const phoneNoPlus = phoneNorm.replace("+", "");
-  const phoneLast9 = phoneNoPlus.slice(-9);
-
-  try {
-    // Duplicate phone check
     const [existing] = await pool.execute<RowDataPacket[]>(
       `SELECT customer_id, is_lead, full_name
        FROM   customers
-       WHERE  REPLACE(REPLACE(REPLACE(phone_number,' ',''),'-',''),'+','') = ?
+       WHERE  phone_normalized = ?
+          OR  phone_last9 = ?
+          OR  REPLACE(REPLACE(REPLACE(phone_number,' ',''),'-',''),'+','') = ?
           OR  RIGHT(REPLACE(REPLACE(REPLACE(phone_number,' ',''),'-',''),'+',''), 9) = ?
        LIMIT 1`,
-      [phoneNoPlus, phoneLast9]
+      [phoneNormalized, phoneLast9, phoneNormalized, phoneLast9]
     );
 
     if (existing.length > 0) {
@@ -160,30 +152,31 @@ export async function POST(req: NextRequest) {
       const msg = rec.is_lead
         ? `This phone number is already registered to a lead: ${rec.full_name ?? rec.customer_id}.`
         : `This phone number is already registered to a customer: ${rec.full_name ?? rec.customer_id}.`;
-      return NextResponse.json({ error: msg }, { status: 409 });
+      return jsonError(msg, 409);
     }
 
-    // Generate a unique customer_id for the new lead
-    const ts  = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
+    const ts = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
     const rnd = Math.floor(Math.random() * 9000 + 1000);
     const customerId = `LEAD-${ts}-${rnd}`;
 
     await pool.execute(
       `INSERT INTO customers
-         (customer_id, full_name, phone_number, email, country, assigned_agent_id, is_lead, lead_stage, labels, created_at, synced_at)
-       VALUES (?, ?, ?, ?, ?, ?, 1, 'New', ?, NOW(), NOW())`,
+         (customer_id, full_name, phone_number, phone_normalized, phone_last9, email, country,
+          assigned_agent_id, is_lead, lead_stage, labels, created_at, synced_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 'New', ?, NOW(), NOW())`,
       [
         customerId,
-        name.trim(),
-        phoneNorm,
-        body.email?.trim() || null,
-        country.trim(),
-        assigned_agent_id ?? null,
-        body.labels?.length ? JSON.stringify(body.labels) : null,
+        name,
+        phone.trim(),
+        phoneNormalized,
+        phoneLast9,
+        email,
+        country,
+        assignedAgentId,
+        labels.length > 0 ? JSON.stringify(labels) : null,
       ]
     );
 
-    // Fetch the created record
     const [[lead]] = await pool.execute<RowDataPacket[]>(
       `SELECT c.customer_id, c.full_name, c.phone_number, c.email, c.country,
               c.is_lead, c.lead_stage, c.assigned_agent_id, c.labels, c.created_at,
@@ -196,8 +189,12 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(lead, { status: 201 });
   } catch (err) {
+    if (err instanceof RequestValidationError) {
+      return jsonError(err.message, err.status, err.issues);
+    }
     const message = err instanceof Error ? err.message : String(err);
     console.error("[POST /api/leads]", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return jsonError(message, 500);
   }
 }
+

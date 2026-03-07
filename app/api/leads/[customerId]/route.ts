@@ -1,15 +1,35 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/src/lib/db";
 import { requireAuth } from "@/src/lib/auth";
+import { authorizeLeadWriteAccess } from "@/src/lib/authorization";
+import { jsonError } from "@/src/lib/httpResponses";
+import { getPhoneLast9, normalizePhoneValue } from "@/src/lib/phoneUtils";
+import {
+  ensureObject,
+  optionalInteger,
+  optionalString,
+  optionalStringArray,
+  parseJsonText,
+  RequestValidationError,
+  requireString,
+} from "@/src/lib/requestValidation";
 import type { RowDataPacket } from "mysql2";
 
-/**
- * PATCH /api/leads/[customerId]
- *
- * Updates mutable lead fields.
- * Body (all optional):
- *   { lead_stage, assigned_agent_id, labels }
- */
+const VALID_STAGES = ["New", "Contacted", "Follow-up", "Converted", "Dead"] as const;
+
+async function fetchLead(customerId: string) {
+  const [[lead]] = await pool.execute<RowDataPacket[]>(
+    `SELECT c.customer_id, c.full_name, c.phone_number, c.email, c.country,
+            c.is_lead, c.lead_stage, c.assigned_agent_id, c.labels, c.created_at,
+            u.name AS assigned_agent_name
+     FROM   customers c
+     LEFT JOIN users u ON u.id = c.assigned_agent_id
+     WHERE  c.customer_id = ?`,
+    [customerId]
+  );
+  return lead ?? null;
+}
+
 export async function PATCH(
   req: NextRequest,
   { params }: { params: { customerId: string } }
@@ -17,48 +37,40 @@ export async function PATCH(
   const auth = requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
-  let body: {
-    lead_stage?: string;
-    assigned_agent_id?: number | null;
-    labels?: string[];
-  };
   try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
-  }
+    const access = await authorizeLeadWriteAccess(params.customerId, auth);
+    if (access instanceof NextResponse) return access;
 
-  const { customerId } = params;
-  const VALID_STAGES = ["New", "Contacted", "Follow-up", "Converted", "Dead"];
+    const body = ensureObject(parseJsonText(await req.text()));
+    const sets: string[] = [];
+    const values: (string | number | null)[] = [];
 
-  const sets: string[] = [];
-  const values: (string | number | string[] | null)[] = [];
-
-  if (body.lead_stage !== undefined) {
-    if (!VALID_STAGES.includes(body.lead_stage)) {
-      return NextResponse.json({ error: "Invalid lead_stage" }, { status: 400 });
+    if (body.lead_stage !== undefined) {
+      const leadStage = requireString(body.lead_stage, "lead_stage", { maxLength: 50 });
+      if (!VALID_STAGES.includes(leadStage as (typeof VALID_STAGES)[number])) {
+        return jsonError("Invalid lead_stage", 400);
+      }
+      sets.push("lead_stage = ?");
+      values.push(leadStage);
     }
-    sets.push("lead_stage = ?");
-    values.push(body.lead_stage);
-  }
 
-  if (body.assigned_agent_id !== undefined) {
-    sets.push("assigned_agent_id = ?");
-    values.push(body.assigned_agent_id ?? null);
-  }
+    if (body.assigned_agent_id !== undefined) {
+      sets.push("assigned_agent_id = ?");
+      values.push(optionalInteger(body.assigned_agent_id, "assigned_agent_id") ?? null);
+    }
 
-  if (body.labels !== undefined) {
-    sets.push("labels = ?");
-    values.push(Array.isArray(body.labels) ? JSON.stringify(body.labels) : null);
-  }
+    if (body.labels !== undefined) {
+      const labels = optionalStringArray(body.labels, "labels") ?? [];
+      sets.push("labels = ?");
+      values.push(labels.length > 0 ? JSON.stringify(labels) : null);
+    }
 
-  if (sets.length === 0) {
-    return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
-  }
+    if (sets.length === 0) {
+      return jsonError("Nothing to update", 400);
+    }
 
-  values.push(customerId);
+    values.push(params.customerId);
 
-  try {
     const [result] = await pool.execute(
       `UPDATE customers SET ${sets.join(", ")} WHERE customer_id = ? AND is_lead = 1`,
       values
@@ -66,34 +78,20 @@ export async function PATCH(
 
     const affectedRows = (result as { affectedRows: number }).affectedRows;
     if (affectedRows === 0) {
-      return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+      return jsonError("Lead not found", 404);
     }
 
-    // Return the updated record
-    const [[lead]] = await pool.execute<RowDataPacket[]>(
-      `SELECT c.customer_id, c.full_name, c.phone_number, c.email, c.country,
-              c.is_lead, c.lead_stage, c.assigned_agent_id, c.labels, c.created_at,
-              u.name AS assigned_agent_name
-       FROM   customers c
-       LEFT JOIN users u ON u.id = c.assigned_agent_id
-       WHERE  c.customer_id = ?`,
-      [customerId]
-    );
-
-    return NextResponse.json(lead);
+    return NextResponse.json(await fetchLead(params.customerId));
   } catch (err) {
+    if (err instanceof RequestValidationError) {
+      return jsonError(err.message, err.status, err.issues);
+    }
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`[PATCH /api/leads/${customerId}]`, message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error(`[PATCH /api/leads/${params.customerId}]`, message);
+    return jsonError(message, 500);
   }
 }
 
-/**
- * PUT /api/leads/[customerId]
- *
- * Full update of a lead's mutable profile fields.
- * Body: { name, phone, email?, country, assigned_agent_id?, labels? }
- */
 export async function PUT(
   req: NextRequest,
   { params }: { params: { customerId: string } }
@@ -101,40 +99,36 @@ export async function PUT(
   const auth = requireAuth(req);
   if (auth instanceof NextResponse) return auth;
 
-  let body: {
-    name?: string;
-    phone?: string;
-    email?: string | null;
-    country?: string;
-    assigned_agent_id?: number | null;
-    labels?: string[];
-  };
   try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
-  }
+    const access = await authorizeLeadWriteAccess(params.customerId, auth);
+    if (access instanceof NextResponse) return access;
 
-  const { customerId } = params;
+    const body = ensureObject(parseJsonText(await req.text()));
+    const name = requireString(body.name, "name", { maxLength: 255 });
+    const phone = requireString(body.phone, "phone", { maxLength: 50 });
+    const country = requireString(body.country, "country", { maxLength: 100 });
+    const email = optionalString(body.email, "email", { maxLength: 255, emptyToNull: true }) ?? null;
+    const assignedAgentId = optionalInteger(body.assigned_agent_id, "assigned_agent_id") ?? null;
+    const labels = optionalStringArray(body.labels, "labels") ?? [];
 
-  if (!body.name?.trim())    return NextResponse.json({ error: "Name is required" },    { status: 400 });
-  if (!body.phone?.trim())   return NextResponse.json({ error: "Phone is required" },   { status: 400 });
-  if (!body.country?.trim()) return NextResponse.json({ error: "Country is required" }, { status: 400 });
+    const phoneNormalized = normalizePhoneValue(phone);
+    const phoneLast9 = getPhoneLast9(phone);
+    if (!phoneNormalized || !phoneLast9) {
+      return jsonError("Phone is required", 400);
+    }
 
-  const phoneNorm    = body.phone.replace(/[\s\-]/g, "");
-  const phoneNoPlus  = phoneNorm.replace("+", "");
-  const phoneLast9   = phoneNoPlus.slice(-9);
-
-  try {
-    // Phone duplicate check — exclude self
     const [existing] = await pool.execute<RowDataPacket[]>(
       `SELECT customer_id, is_lead, full_name
        FROM   customers
-       WHERE  (   REPLACE(REPLACE(REPLACE(phone_number,' ',''),'-',''),'+','') = ?
-              OR  RIGHT(REPLACE(REPLACE(REPLACE(phone_number,' ',''),'-',''),'+',''), 9) = ?)
-         AND  customer_id != ?
+       WHERE  customer_id != ?
+         AND (
+              phone_normalized = ?
+           OR phone_last9 = ?
+           OR REPLACE(REPLACE(REPLACE(phone_number,' ',''),'-',''),'+','') = ?
+           OR RIGHT(REPLACE(REPLACE(REPLACE(phone_number,' ',''),'-',''),'+',''), 9) = ?
+         )
        LIMIT 1`,
-      [phoneNoPlus, phoneLast9, customerId]
+      [params.customerId, phoneNormalized, phoneLast9, phoneNormalized, phoneLast9]
     );
 
     if (existing.length > 0) {
@@ -142,43 +136,41 @@ export async function PUT(
       const msg = rec.is_lead
         ? `This phone is already registered to a lead: ${rec.full_name ?? rec.customer_id}.`
         : `This phone is already registered to a customer: ${rec.full_name ?? rec.customer_id}.`;
-      return NextResponse.json({ error: msg }, { status: 409 });
+      return jsonError(msg, 409);
     }
 
     await pool.execute(
       `UPDATE customers
-       SET    full_name         = ?,
-              phone_number      = ?,
-              email             = ?,
-              country           = ?,
+       SET    full_name = ?,
+              phone_number = ?,
+              phone_normalized = ?,
+              phone_last9 = ?,
+              email = ?,
+              country = ?,
               assigned_agent_id = ?,
-              labels            = ?
+              labels = ?
        WHERE  customer_id = ? AND is_lead = 1`,
       [
-        body.name.trim(),
-        phoneNorm,
-        body.email?.trim() || null,
-        body.country.trim(),
-        body.assigned_agent_id ?? null,
-        body.labels !== undefined ? JSON.stringify(body.labels) : null,
-        customerId,
+        name,
+        phone.trim(),
+        phoneNormalized,
+        phoneLast9,
+        email,
+        country,
+        assignedAgentId,
+        labels.length > 0 ? JSON.stringify(labels) : null,
+        params.customerId,
       ]
     );
 
-    const [[lead]] = await pool.execute<RowDataPacket[]>(
-      `SELECT c.customer_id, c.full_name, c.phone_number, c.email, c.country,
-              c.is_lead, c.lead_stage, c.assigned_agent_id, c.labels, c.created_at,
-              u.name AS assigned_agent_name
-       FROM   customers c
-       LEFT JOIN users u ON u.id = c.assigned_agent_id
-       WHERE  c.customer_id = ?`,
-      [customerId]
-    );
-
-    return NextResponse.json(lead);
+    return NextResponse.json(await fetchLead(params.customerId));
   } catch (err) {
+    if (err instanceof RequestValidationError) {
+      return jsonError(err.message, err.status, err.issues);
+    }
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`[PUT /api/leads/${customerId}]`, message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error(`[PUT /api/leads/${params.customerId}]`, message);
+    return jsonError(message, 500);
   }
 }
+

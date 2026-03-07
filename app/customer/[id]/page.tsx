@@ -32,7 +32,6 @@ import { normalizePhone } from "@/src/lib/phoneUtils";
 import { apiFetch } from "@/src/lib/apiFetch";
 import { useQueue, type TaskStatus } from "@/src/context/QueueContext";
 import { useTwilioVoice } from "@/src/context/TwilioVoiceContext";
-import { useAuth } from "@/src/context/AuthContext";
 import { useDropdowns } from "@/src/context/DropdownsContext";
 
 interface ApiCustomer {
@@ -53,6 +52,7 @@ interface ApiInteraction {
   agent_id: number | null;
   type: "Call" | "Email" | "Note" | "System" | "SMS";
   outcome: string | null;
+  call_status: string | null;
   note: string | null;
   direction: string | null;
   metadata: string | null;
@@ -119,6 +119,18 @@ function formatDate(iso: string | null): string {
   });
 }
 
+function createRequestId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
+    const rand = Math.floor(Math.random() * 16);
+    const value = char === "x" ? rand : (rand & 0x3) | 0x8;
+    return value.toString(16);
+  });
+}
+
 const FOCUS_PLACEHOLDER = "Select outcome…";
 
 function outcomeToStatus(outcome: string): TaskStatus {
@@ -166,7 +178,6 @@ export default function CustomerProfilePage({
   const router = useRouter();
   const { queuePosition, sortedQueue, activeTab: queueTab, setTaskStatus } = useQueue();
   const { makeCall, callState, callerInfo, callDuration, isMuted, toggleMute, hangUp } = useTwilioVoice();
-  const { user } = useAuth();
   const { focusOutcomes: dbFocusOutcomes, noteOutcomes: dbNoteOutcomes } = useDropdowns();
 
   // Build runtime arrays with placeholder; fall back to hardcoded if DB not loaded yet
@@ -312,7 +323,7 @@ export default function CustomerProfilePage({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             customerId: params.id,
-            agentId: user?.id ?? null,
+            requestId: createRequestId(),
             overridePhone: smsTo.trim(),
             message: smsMessage.trim(),
           }),
@@ -329,7 +340,7 @@ export default function CustomerProfilePage({
         // Template id 6 = "Beneficiary Information Update Required"
         const emailPayload: Record<string, unknown> = {
           customerId: params.id,
-          agentId: user?.id ?? null,
+          requestId: createRequestId(),
           overrideEmail: emailTo.trim(),
           subject: emailSubject.trim(),
           message: emailBody.trim(),
@@ -364,7 +375,6 @@ export default function CustomerProfilePage({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             customerId: params.id,
-            agentId: user?.id ?? null,
             type: "Note",
             outcome: noteOutcome,
             note: noteOutcome,
@@ -388,7 +398,7 @@ export default function CustomerProfilePage({
   const smsTemplates = templates.filter((t) => t.channel === "SMS");
   const emailTemplates = templates.filter((t) => t.channel === "Email");
 
-  // ─ Focus Mode save handler ─────────────────────────────────────────────────
+  // - Focus Mode save handler -------------------------------------------------
   async function handleFocusSave(andNext: boolean) {
     if (focusSending || focusOutcome === FOCUS_PLACEHOLDER) return;
     setFocusSending(true);
@@ -406,7 +416,6 @@ export default function CustomerProfilePage({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           customerId: params.id,
-          agentId: user?.id ?? null,
           type: "Note",
           outcome: focusOutcome,
           note: focusNote.trim() || null,
@@ -422,7 +431,7 @@ export default function CustomerProfilePage({
           if (nextCustomer) {
             router.push(`/customer/${nextCustomer.customer_id}`);
           } else {
-            setToast({ message: "Queue complete! 🎉", type: "success" });
+            setToast({ message: "Queue complete! ??", type: "success" });
             setTimeout(() => router.push("/my-tasks"), 1800);
           }
         } else {
@@ -1010,7 +1019,7 @@ export default function CustomerProfilePage({
         </button>
       </div>
 
-      {/* ─── Focus Mode ─────────────────────────────────────────────────── */}
+      {/* --- Focus Mode --------------------------------------------------- */}
       {focusPosition && (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50/40 p-6 shadow-sm">
           <div className="mb-4 flex items-center justify-between">
@@ -1106,7 +1115,7 @@ export default function CustomerProfilePage({
                   <div className="min-w-0 flex-1 pt-1">
                     <div className="flex items-start justify-between gap-2">
                       <p className="text-sm font-semibold leading-tight text-slate-800">
-                        {item.outcome ?? item.type}
+                        {item.outcome ?? item.call_status ?? item.type}
                       </p>
                       <span className="flex-shrink-0 text-xs text-slate-400">
                         {formatRelative(item.created_at)}
@@ -1114,7 +1123,7 @@ export default function CustomerProfilePage({
                     </div>
                     {item.type === "SMS" && item.direction === "inbound" && (
                       <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-cyan-50 px-2 py-0.5 text-[11px] font-semibold text-cyan-700">
-                        ← Inbound SMS
+                        ? Inbound SMS
                       </span>
                     )}
                     {(() => {
@@ -1171,3 +1180,6 @@ export default function CustomerProfilePage({
     </div>
   );
 }
+
+
+
