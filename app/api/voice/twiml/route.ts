@@ -45,8 +45,11 @@ export async function POST(req: NextRequest) {
     const fromParam = params.From ?? "";
     const toParam = params.To ?? "";
     const callSid = params.CallSid ?? "";
+    const isSipAgent = fromParam.startsWith("sip:");
+    const isBrowserAgent = fromParam.startsWith("client:");
+    const flow = (isSipAgent || isBrowserAgent) ? "outbound" : "inbound";
     const callWebhookBase = `${baseUrl}/api/voice/call-completed`;
-    const recordingStatusCallback = `${callWebhookBase}?source=recording`;
+    const recordingStatusCallback = `${callWebhookBase}?source=recording&flow=${flow}&parentCallSid=${encodeURIComponent(callSid)}`;
     const dialOptions = {
       record: "record-from-answer" as const,
       recordingStatusCallback,
@@ -54,9 +57,6 @@ export async function POST(req: NextRequest) {
       method: "POST" as const,
     };
 
-    const isSipAgent = fromParam.startsWith("sip:");
-    const isBrowserAgent = fromParam.startsWith("client:");
-    const flow = (isSipAgent || isBrowserAgent) ? "outbound" : "inbound";
     const sipOutboundNumber = isSipAgent ? extractE164FromSip(toParam) : null;
     const browserOutboundNumber = isBrowserAgent && isValidE164(toParam) ? toParam : null;
 
@@ -96,8 +96,8 @@ export async function POST(req: NextRequest) {
     }
 
     if (flow === "outbound") {
-      const actionUrl = `${callWebhookBase}?source=dial-action&flow=outbound&leg=parent`;
-      const pstnStatusUrl = `${callWebhookBase}?source=leg-status&flow=outbound&leg=pstn`;
+      const actionUrl = `${callWebhookBase}?source=dial-action&flow=outbound&leg=parent&parentCallSid=${encodeURIComponent(callSid)}`;
+      const pstnStatusUrl = `${callWebhookBase}?source=leg-status&flow=outbound&leg=pstn&parentCallSid=${encodeURIComponent(callSid)}`;
       const dial = twiml.dial({
         ...dialOptions,
         callerId: process.env.TWILIO_PHONE_NUMBER ?? process.env.TWILIO_FROM_NUMBER!,
@@ -141,11 +141,11 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      const actionUrl = `${callWebhookBase}?source=dial-action&flow=inbound&leg=parent&agentId=${selectedAgentId}`;
+      const actionUrl = `${callWebhookBase}?source=dial-action&flow=inbound&leg=parent&agentId=${selectedAgentId}&parentCallSid=${encodeURIComponent(callSid)}`;
       const dial = twiml.dial({ ...dialOptions, action: actionUrl });
       dial.client(
         {
-          statusCallback: `${callWebhookBase}?source=leg-status&flow=inbound&leg=browser&agentId=${selectedAgentId}`,
+          statusCallback: `${callWebhookBase}?source=leg-status&flow=inbound&leg=browser&agentId=${selectedAgentId}&parentCallSid=${encodeURIComponent(callSid)}`,
           statusCallbackMethod: "POST",
           statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
         },
@@ -154,7 +154,7 @@ export async function POST(req: NextRequest) {
       if (sipDomain) {
         dial.sip(
           {
-            statusCallback: `${callWebhookBase}?source=leg-status&flow=inbound&leg=sip&agentId=${selectedAgentId}`,
+            statusCallback: `${callWebhookBase}?source=leg-status&flow=inbound&leg=sip&agentId=${selectedAgentId}&parentCallSid=${encodeURIComponent(callSid)}`,
             statusCallbackMethod: "POST",
             statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
           },
@@ -192,7 +192,7 @@ export async function POST(req: NextRequest) {
     twiml.record({
       maxLength: 120,
       finishOnKey: "#",
-      recordingStatusCallback: `${recordingStatusCallback}&flow=inbound&leg=voicemail`,
+      recordingStatusCallback: `${recordingStatusCallback}&leg=voicemail`,
       recordingStatusCallbackMethod: "POST",
       transcribe: false,
     });

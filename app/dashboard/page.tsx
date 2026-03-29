@@ -55,6 +55,7 @@ interface StatsRow {
 interface StatsData {
   byCurrency:    Array<StatsRow & { currency: string | null }>;
   byDestination: Array<StatsRow & { destination: string | null }>;
+  byOrigin:      Array<StatsRow & { origin: string | null }>;
 }
 
 const DAYS_OPTIONS = [
@@ -74,7 +75,7 @@ function minutesAgo(iso: string | null): number | null {
 }
 
 function fmtTime(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   return new Date(iso).toLocaleTimeString("en-GB", {
     hour: "2-digit",
     minute: "2-digit",
@@ -148,7 +149,7 @@ export default function GlobalDashboard() {
   const daysRef = useRef<number>(3);
   daysRef.current = days;
 
-  // Access guard — redirect agents without dashboard permission
+  // Access guard - redirect agents without dashboard permission
   useEffect(() => {
     if (authLoading) return;
     if (user && user.role !== "Admin" && !user.can_view_dashboard) {
@@ -240,14 +241,14 @@ export default function GlobalDashboard() {
           <div>
             <p className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-1 text-xs font-semibold text-emerald-100 ring-1 ring-white/20">
               {data && !error ? (
-                <><Wifi className="h-3 w-3" /> Live — refreshes every 60s</>
+                <><Wifi className="h-3 w-3" /> Live - refreshes every 60s</>
               ) : error ? (
                 <><WifiOff className="h-3 w-3 text-rose-300" /> Connection error</>
               ) : (
-                <><RefreshCw className="h-3 w-3 animate-spin" /> Loading…</>
+                <><RefreshCw className="h-3 w-3 animate-spin" /> Loading...</>
               )}
             </p>
-            <h1 className="text-2xl font-bold tracking-tight md:text-3xl">{greeting}, {user?.name?.split(" ")[0] ?? "…"}.</h1>
+            <h1 className="text-2xl font-bold tracking-tight md:text-3xl">{greeting}, {user?.name?.split(" ")[0] ?? "..."}.</h1>
             <p className="mt-1 text-sm text-slate-300">Live operational command centre.</p>
           </div>
 
@@ -272,7 +273,7 @@ export default function GlobalDashboard() {
             </button>
             <div className="rounded-2xl border border-white/20 bg-white/10 px-3 py-2 backdrop-blur-sm text-right">
               <p className="text-[11px] uppercase tracking-[0.12em] text-slate-300">Last updated</p>
-              <p className="text-sm font-semibold">{lastRefresh ? lastRefresh.toLocaleTimeString("en-GB") : "—"}</p>
+              <p className="text-sm font-semibold">{lastRefresh ? lastRefresh.toLocaleTimeString("en-GB") : "-"}</p>
             </div>
           </div>
         </div>
@@ -284,14 +285,14 @@ export default function GlobalDashboard() {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <StatCard
             label="Somalia SLA Breaches"
-            value={loading ? "…" : (data?.health.somaliaBreached ?? "—")}
+            value={loading ? "..." : (data?.health.somaliaBreached ?? "-")}
             sub="Transfers pending > 15 minutes"
             icon={AlertTriangle}
             accent={somaliaAlert ? "rose" : "emerald"}
           />
           <StatCard
             label="Standard SLA Breaches"
-            value={loading ? "…" : (data?.health.standardBreached ?? "—")}
+            value={loading ? "..." : (data?.health.standardBreached ?? "-")}
             sub="Transfers pending > 24 hours"
             icon={CheckCircle2}
             accent={(data?.health.standardBreached ?? 0) > 0 ? "amber" : "emerald"}
@@ -300,14 +301,14 @@ export default function GlobalDashboard() {
       </div>
 
       {/* ── Volume Widgets ────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
 
         {/* Widget 1: Volume by Currency */}
         <div>
           <h2 className="mb-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Volume by Currency</h2>
           <article className="rounded-3xl border border-sky-200/90 bg-gradient-to-br from-sky-50 to-white p-5 shadow-md">
             {statsLoading ? (
-              <p className="text-sm text-sky-400">Loading…</p>
+              <p className="text-sm text-sky-400">Loading...</p>
             ) : !statsData || statsData.byCurrency.length === 0 ? (
               <p className="text-sm text-slate-400">No data for this period.</p>
             ) : (
@@ -336,7 +337,7 @@ export default function GlobalDashboard() {
           <h2 className="mb-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Volume by Destination</h2>
           <article className="rounded-3xl border border-violet-200/90 bg-gradient-to-br from-violet-50 to-white p-5 shadow-md">
             {statsLoading ? (
-              <p className="text-sm text-violet-400">Loading…</p>
+              <p className="text-sm text-violet-400">Loading...</p>
             ) : !statsData || statsData.byDestination.length === 0 ? (
               <p className="text-sm text-slate-400">No data for this period.</p>
             ) : (
@@ -348,6 +349,35 @@ export default function GlobalDashboard() {
                         <Globe className="h-3.5 w-3.5" />
                       </div>
                       <span className="text-xs font-semibold text-violet-700">{row.destination ?? "Unknown"}</span>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-black text-slate-800">{fmtRevenue(row.total_revenue)}</p>
+                      <p className="text-xs text-slate-400">{row.total_transfers.toLocaleString("en-GB")} transfers</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </article>
+        </div>
+
+        {/* Widget 3: Volume by Origin */}
+        <div>
+          <h2 className="mb-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Volume by Origin</h2>
+          <article className="rounded-3xl border border-emerald-200/90 bg-gradient-to-br from-emerald-50 to-white p-5 shadow-md">
+            {statsLoading ? (
+              <p className="text-sm text-emerald-400">Loading...</p>
+            ) : !statsData || statsData.byOrigin.length === 0 ? (
+              <p className="text-sm text-slate-400">No data for this period.</p>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {statsData.byOrigin.map((row) => (
+                  <li key={row.origin ?? "unknown"} className="flex items-center justify-between py-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-emerald-100 text-emerald-700">
+                        <Users className="h-3.5 w-3.5" />
+                      </div>
+                      <span className="text-xs font-semibold text-emerald-700">{row.origin ?? "Unknown"}</span>
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-black text-slate-800">{fmtRevenue(row.total_revenue)}</p>
@@ -372,23 +402,23 @@ export default function GlobalDashboard() {
         </div>
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
 
-          {/* Col 1: Provider Bottleneck — Processed / Unpaid */}
+          {/* Col 1: Provider Bottleneck - Processed / Unpaid */}
           <article className="relative overflow-hidden rounded-3xl border border-amber-200/90 bg-gradient-to-br from-amber-50 to-white p-5 shadow-md shadow-amber-100/40">
             <div className="absolute right-0 top-0 h-24 w-24 translate-x-6 -translate-y-6 rounded-full bg-amber-200/35" />
             <div className="relative">
               <div className="flex items-start justify-between">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-700">Provider Bottleneck</p>
-                  <p className="mt-0.5 text-xs text-amber-600/80">Processed — Awaiting Provider Payout</p>
+                  <p className="mt-0.5 text-xs text-amber-600/80">Processed - Awaiting Provider Payout</p>
                 </div>
                 <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-amber-100 text-amber-700">
                   <AlertTriangle className="h-5 w-5" />
                 </div>
               </div>
               {slaLoading ? (
-                <p className="mt-4 text-2xl font-black text-amber-400">…</p>
+                <p className="mt-4 text-2xl font-black text-amber-400">...</p>
               ) : !slaData || slaData.processedNotPaid.length === 0 ? (
-                <p className="mt-4 text-sm font-semibold text-emerald-600">✓ All clear — no unpaid transfers</p>
+                <p className="mt-4 text-sm font-semibold text-emerald-600">✓ All clear - no unpaid transfers</p>
               ) : (
                 <ul className="mt-3 space-y-1.5">
                   {slaData.processedNotPaid.map((row) => (
@@ -402,7 +432,7 @@ export default function GlobalDashboard() {
             </div>
           </article>
 
-          {/* Col 2: Internal Bottleneck — Payment Received / Unprocessed */}
+          {/* Col 2: Internal Bottleneck - Payment Received / Unprocessed */}
           <article className={`relative overflow-hidden rounded-3xl border p-5 shadow-md ${
             internalUrgent
               ? "border-rose-300 bg-gradient-to-br from-rose-50 to-white shadow-rose-100/60"
@@ -422,7 +452,7 @@ export default function GlobalDashboard() {
                 <p className={`mt-3 text-5xl font-black tracking-tight ${
                   internalUrgent ? "text-rose-700" : "text-emerald-700"
                 }`}>
-                  {slaLoading ? "…" : (slaData?.paymentReceivedNotProcessed ?? "—")}
+                  {slaLoading ? "..." : (slaData?.paymentReceivedNotProcessed ?? "-")}
                 </p>
                 <p className="mt-1 text-xs text-slate-500">Payment received, not yet processed</p>
               </div>
@@ -434,7 +464,7 @@ export default function GlobalDashboard() {
             </div>
           </article>
 
-          {/* Col 3: Lost Revenue — Canceled */}
+          {/* Col 3: Lost Revenue - Canceled */}
           <article className="relative overflow-hidden rounded-3xl border border-slate-200/90 bg-gradient-to-br from-slate-50 to-white p-5 shadow-md shadow-slate-100/40">
             <div className="absolute right-0 top-0 h-24 w-24 translate-x-6 -translate-y-6 rounded-full bg-slate-200/35" />
             <div className="relative flex items-start justify-between">
@@ -442,7 +472,7 @@ export default function GlobalDashboard() {
                 <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">Lost Revenue</p>
                 <p className="mt-0.5 text-xs text-slate-500">Canceled transfers in period</p>
                 <p className="mt-3 text-5xl font-black tracking-tight text-slate-700">
-                  {slaLoading ? "…" : (slaData?.canceled ?? "—")}
+                  {slaLoading ? "..." : (slaData?.canceled ?? "-")}
                 </p>
                 <p className="mt-1 text-xs text-slate-400">Transactions not completed</p>
               </div>
@@ -463,7 +493,7 @@ export default function GlobalDashboard() {
               <AlertTriangle className="h-5 w-5" />
             </div>
             <div className="space-y-1.5">
-              <p className="text-sm font-bold text-red-800">Operational Alert — Immediate Attention Required</p>
+              <p className="text-sm font-bold text-red-800">Operational Alert - Immediate Attention Required</p>
               {somaliaAlert && (
                 <p className="text-sm text-red-700">
                   <span className="font-bold">{data!.health.somaliaBreached}</span> Somalia transfer{data!.health.somaliaBreached !== 1 ? "s" : ""} have been pending for over 15 minutes without delivery confirmation.
@@ -486,21 +516,21 @@ export default function GlobalDashboard() {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <StatCard
             label="Pending KYC"
-            value={loading ? "…" : (data?.pipeline.pendingKyc ?? "—")}
+            value={loading ? "..." : (data?.pipeline.pendingKyc ?? "-")}
             sub="Customers awaiting verification"
             icon={ShieldAlert}
             accent="amber"
           />
           <StatCard
             label="Zero Transfers (New)"
-            value={loading ? "…" : (data?.pipeline.newZeroTransfer ?? "—")}
+            value={loading ? "..." : (data?.pipeline.newZeroTransfer ?? "-")}
             sub="Registered last 7 days, no send"
             icon={Users}
             accent="rose"
           />
           <StatCard
             label="Dormant Users"
-            value={loading ? "…" : (data?.pipeline.dormantUsers ?? "—")}
+            value={loading ? "..." : (data?.pipeline.dormantUsers ?? "-")}
             sub="Last transfer over 40 days ago"
             icon={Clock}
             accent="slate"
@@ -514,21 +544,21 @@ export default function GlobalDashboard() {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <StatCard
             label="Activities Today"
-            value={loading ? "…" : (data?.velocity.interactionsToday ?? "—")}
+            value={loading ? "..." : (data?.velocity.interactionsToday ?? "-")}
             sub="Agent interactions logged"
             icon={Activity}
             accent="sky"
           />
           <StatCard
             label="Conversions Today"
-            value={loading ? "…" : (data?.velocity.conversionsToday ?? "—")}
+            value={loading ? "..." : (data?.velocity.conversionsToday ?? "-")}
             sub="Attributed transfers sent"
             icon={TrendingUp}
             accent="emerald"
           />
           <StatCard
             label="Last Transfer Ingested"
-            value={loading ? "…" : fmtTime(data?.health.lastIngestedAt ?? null)}
+            value={loading ? "..." : fmtTime(data?.health.lastIngestedAt ?? null)}
             sub={
               minsAgo !== null
                 ? minsAgo < 2

@@ -6,6 +6,7 @@ import { createContext, useContext, useState, useCallback } from "react";
 
 export type TaskStatus = "uncontacted" | "follow-up" | "closed";
 export type QueueTab = "uncontacted" | "follow-up" | "closed";
+export type QueueSortMode = "smart" | "server";
 
 export interface QueueCustomer {
   customer_id: string;
@@ -18,11 +19,14 @@ export interface QueueCustomer {
   risk_status: string | null;
   total_transfers: number;
   last_transfer_date: string | null;
+  last_interaction_date: string | null;
 }
 
 interface QueueContextValue {
   rawCustomers: QueueCustomer[];
   setRawCustomers: (customers: QueueCustomer[]) => void;
+  sortMode: QueueSortMode;
+  setSortMode: (mode: QueueSortMode) => void;
   taskStatusMap: Record<string, TaskStatus>;
   setTaskStatus: (id: string, status: TaskStatus) => void;
   activeTab: QueueTab;
@@ -35,15 +39,15 @@ interface QueueContextValue {
 
 function smartSort(customers: QueueCustomer[]): QueueCustomer[] {
   const priority = (c: QueueCustomer): number => {
-    // P1 — Pending KYC
+    // P1 - Pending KYC
     if (c.kyc_completion_date === null) return 0;
-    // P2 — KYC complete, 0 transfers, registered < 30 days ago
+    // P2 - KYC complete, 0 transfers, registered < 30 days ago
     const regMs = c.registration_date
       ? new Date(c.registration_date).getTime()
       : 0;
     const ageDays = (Date.now() - regMs) / 86_400_000;
     if (c.total_transfers === 0 && ageDays < 30) return 1;
-    // P3 — Dormant (0 transfers, > 30 days)
+    // P3 - Dormant (0 transfers, > 30 days)
     return 2;
   };
   return [...customers].sort((a, b) => priority(a) - priority(b));
@@ -55,6 +59,7 @@ const QueueContext = createContext<QueueContextValue | null>(null);
 
 export function QueueProvider({ children }: { children: React.ReactNode }) {
   const [rawCustomers, setRawCustomers] = useState<QueueCustomer[]>([]);
+  const [sortMode, setSortMode] = useState<QueueSortMode>("smart");
   const [taskStatusMap, setTaskStatusMapState] = useState<
     Record<string, TaskStatus>
   >({});
@@ -69,9 +74,10 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
       const filtered = rawCustomers.filter(
         (c) => (taskStatusMap[c.customer_id] ?? "uncontacted") === tab
       );
-      return tab === "uncontacted" ? smartSort(filtered) : filtered;
+      if (tab !== "uncontacted") return filtered;
+      return sortMode === "smart" ? smartSort(filtered) : filtered;
     },
-    [rawCustomers, taskStatusMap]
+    [rawCustomers, sortMode, taskStatusMap]
   );
 
   const queuePosition = useCallback(
@@ -89,6 +95,8 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
       value={{
         rawCustomers,
         setRawCustomers,
+        sortMode,
+        setSortMode,
         taskStatusMap,
         setTaskStatus,
         activeTab,

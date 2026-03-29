@@ -21,7 +21,7 @@
  *   paymentReceived_Name → payment_status
  */
 
-// No mysql2 imports needed at module level — db passed as parameter
+// No mysql2 imports needed at module level - db passed as parameter
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
@@ -169,7 +169,7 @@ export interface UpsertResult {
 
 /**
  * Upsert transfers into MySQL.
- * `db` can be a mysql2 Connection or Pool — both expose `execute()`.
+ * `db` can be a mysql2 Connection or Pool - both expose `execute()`.
  */
 export async function upsertTransfers(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

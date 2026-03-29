@@ -226,7 +226,9 @@ export async function upsertCallInteraction(input: UpsertCallInteractionInput): 
     ? await getCallInteractionBySids(lookupSids)
     : null;
 
-  const canonicalSid = input.twilioCallSid ?? existing?.twilio_call_sid ?? lookupSids[0] ?? null;
+  // Prefer the existing record's SID so ON DUPLICATE KEY UPDATE always
+  // targets the original row instead of creating a new one with a child-leg SID.
+  const canonicalSid = existing?.twilio_call_sid ?? input.twilioCallSid ?? lookupSids[0] ?? null;
   const metadataJson = Object.keys(incomingMetadata).length > 0
     ? JSON.stringify(incomingMetadata)
     : null;

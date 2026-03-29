@@ -7,7 +7,7 @@ export function AppHeader() {
 
   const initials = user?.name
     ? user.name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase()
-    : "…";
+    : "...";
 
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/80 px-4 py-3 backdrop-blur-xl md:px-6">
@@ -36,8 +36,8 @@ export function AppHeader() {
               </>
             ) : (
               <>
-                <p className="text-sm font-semibold text-slate-800">{user?.name ?? "—"}</p>
-                <p className="text-xs text-slate-500">{user?.role ?? "—"}</p>
+                <p className="text-sm font-semibold text-slate-800">{user?.name ?? "-"}</p>
+                <p className="text-xs text-slate-500">{user?.role ?? "-"}</p>
               </>
             )}
           </div>

@@ -182,7 +182,7 @@ function AddItemForm({
     <form onSubmit={submit} className="flex items-center gap-2 px-4 py-3 bg-slate-50 border-t border-slate-100">
       <input
         autoFocus
-        placeholder="New label…"
+        placeholder="New label..."
         value={label}
         onChange={(e) => setLabel(e.target.value)}
         className="flex-1 rounded-lg border border-slate-300 px-2 py-1 text-sm focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-300"

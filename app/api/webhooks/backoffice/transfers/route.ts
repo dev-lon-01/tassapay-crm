@@ -2,6 +2,7 @@
 import { pool } from "@/src/lib/db";
 import { validateBackofficeSignature } from "@/src/lib/backofficeWebhook";
 import { jsonError } from "@/src/lib/httpResponses";
+import { cancelCommissionForTransfer } from "@/src/lib/commissionEngine";
 import {
   isPlainObject,
   parseJsonText,
@@ -176,6 +177,8 @@ export async function POST(req: NextRequest) {
     let inserted = 0;
     let updated = 0;
     let attributed = 0;
+    const reversalRefs: string[] = [];
+    const REVERSAL_STATUSES = new Set(["Failed", "Refunded", "Returned", "Chargeback", "Cancelled"]);
     const conn = await pool.getConnection();
 
     try {
@@ -195,7 +198,10 @@ export async function POST(req: NextRequest) {
           const [agentRows] = await conn.execute<RowDataPacket[]>(
             `SELECT agent_id FROM interactions
              WHERE  customer_id = ?
-               AND  created_at >= DATE_SUB(NOW(), INTERVAL 14 DAY)
+               AND  agent_id IS NOT NULL
+               AND  type = 'Call'
+               AND  call_duration_seconds > 120
+               AND  created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
              ORDER BY created_at DESC
              LIMIT 1`,
             [customerId]
@@ -224,6 +230,13 @@ export async function POST(req: NextRequest) {
         const [result] = await conn.execute<ResultSetHeader>(UPSERT_SQL, row);
         if (result.affectedRows === 1) inserted++;
         else if (result.affectedRows === 2) updated++;
+
+        // Track reversals for post-commit commission cancellation
+        const txStatus = str(transfer.Tx_Status);
+        if (txStatus && REVERSAL_STATUSES.has(txStatus)) {
+          const ref = str(transfer.ReferenceNo);
+          if (ref) reversalRefs.push(ref);
+        }
       }
 
       await conn.commit();
@@ -234,7 +247,29 @@ export async function POST(req: NextRequest) {
       conn.release();
     }
 
-    return NextResponse.json({ received, inserted, updated, attributed });
+    // Post-commit: cancel commissions for any reversal-status transfers
+    let cancelled = 0;
+    for (const ref of reversalRefs) {
+      try {
+        const [rows] = await pool.execute<RowDataPacket[]>(
+          `SELECT id, status FROM transfers WHERE transaction_ref = ?`,
+          [ref],
+        );
+        if (rows.length > 0) {
+          const result = await cancelCommissionForTransfer(
+            rows[0].id,
+            `Transfer ${ref} status changed to ${rows[0].status}`,
+          );
+          if (result.action === "cancelled" || result.action === "flagged_for_review") {
+            cancelled++;
+          }
+        }
+      } catch (err) {
+        console.error(`[webhook/transfers] Failed to cancel commission for ref=${ref}:`, err);
+      }
+    }
+
+    return NextResponse.json({ received, inserted, updated, attributed, cancelled });
   } catch (err) {
     if (err instanceof RequestValidationError) {
       return jsonError(err.message, err.status, err.issues);

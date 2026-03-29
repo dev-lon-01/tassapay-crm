@@ -235,7 +235,7 @@ export function IndependentDialer() {
               <Search size={14} className="shrink-0 text-slate-400" />
               <input
                 autoFocus
-                placeholder="Search by name or phone…"
+                placeholder="Search by name or phone..."
                 value={query}
                 onChange={(e) => {
                   setQuery(e.target.value);
@@ -264,7 +264,7 @@ export function IndependentDialer() {
                       }}
                       className="flex w-full items-center justify-between px-3 py-2.5 text-left text-sm hover:bg-slate-50"
                     >
-                      <span className="font-medium text-slate-800">{s.full_name ?? "—"}</span>
+                      <span className="font-medium text-slate-800">{s.full_name ?? "-"}</span>
                       <span className="text-xs text-slate-400">{s.phone_number}</span>
                     </button>
                   </li>
@@ -326,7 +326,7 @@ export function IndependentDialer() {
           className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Phone size={14} />
-          {isCallBusy ? "Call in progress…" : "Call"}
+          {isCallBusy ? "Call in progress..." : "Call"}
         </button>
       </div>
     </div>

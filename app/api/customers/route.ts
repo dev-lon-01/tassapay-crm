@@ -71,8 +71,8 @@ export async function GET(req: NextRequest) {
       conditions.push("(SELECT COUNT(*) FROM transfers t WHERE t.customer_id = customers.customer_id) > 0");
     }
     if (search) {
-      conditions.push("(full_name LIKE ? OR customer_id LIKE ?)");
-      params.push(`%${search}%`, `%${search}%`);
+      conditions.push("(full_name LIKE ? OR customer_id LIKE ? OR email LIKE ? OR phone_number LIKE ?)");
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
     }
     if (referenceSearch) {
       const patterns = buildReferenceSearchPatterns(referenceSearch);

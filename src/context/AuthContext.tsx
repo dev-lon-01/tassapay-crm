@@ -58,7 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             return;
           }
         } catch {
-          // malformed token — drop it
+          // malformed token - drop it
           localStorage.removeItem(TOKEN_KEY);
           localStorage.removeItem(USER_KEY);
           return;
@@ -67,7 +67,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(JSON.parse(storedUser) as AuthUser);
       }
     } catch {
-      // corrupted storage — ignore
+      // corrupted storage - ignore
     } finally {
       setIsLoading(false);
     }

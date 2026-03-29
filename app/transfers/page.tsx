@@ -40,53 +40,62 @@ interface Filters {
   slaFilter: string; // "" | "late_standard" | "late_somalia"
 }
 
-// â”€â”€â”€ country flags â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-const COUNTRY_FLAGS: Record<string, string> = {
-  "United Kingdom": "ðŸ‡¬ðŸ‡§",
-  Germany: "ðŸ‡©ðŸ‡ª",
-  France: "ðŸ‡«ðŸ‡·",
-  Italy: "ðŸ‡®ðŸ‡¹",
-  Sweden: "ðŸ‡¸ðŸ‡ª",
-  Netherlands: "ðŸ‡³ðŸ‡±",
-  Belgium: "ðŸ‡§ðŸ‡ª",
-  Norway: "ðŸ‡³ðŸ‡´",
-  Denmark: "ðŸ‡©ðŸ‡°",
-  Finland: "ðŸ‡«ðŸ‡®",
-  Switzerland: "ðŸ‡¨ðŸ‡­",
-  Austria: "ðŸ‡¦ðŸ‡¹",
-  Ireland: "ðŸ‡®ðŸ‡ª",
-  Portugal: "ðŸ‡µðŸ‡¹",
-  Spain: "ðŸ‡ªðŸ‡¸",
-  Greece: "ðŸ‡¬ðŸ‡·",
-  Poland: "ðŸ‡µðŸ‡±",
-  "Czech Republic": "ðŸ‡¨ðŸ‡¿",
-  Hungary: "ðŸ‡­ðŸ‡º",
-  Romania: "ðŸ‡·ðŸ‡´",
-  "United States": "ðŸ‡ºðŸ‡¸",
-  USA: "ðŸ‡ºðŸ‡¸",
-  Canada: "ðŸ‡¨ðŸ‡¦",
-  Australia: "ðŸ‡¦ðŸ‡º",
-  Somalia: "ðŸ‡¸ðŸ‡´",
-  Ethiopia: "ðŸ‡ªðŸ‡¹",
-  Kenya: "ðŸ‡°ðŸ‡ª",
-  Nigeria: "ðŸ‡³ðŸ‡¬",
-  Ghana: "ðŸ‡¬ðŸ‡­",
-  Eritrea: "ðŸ‡ªðŸ‡·",
-  Djibouti: "ðŸ‡©ðŸ‡¯",
-  UAE: "ðŸ‡¦ðŸ‡ª",
-  "Saudi Arabia": "ðŸ‡¸ðŸ‡¦",
-  "South Africa": "ðŸ‡¿ðŸ‡¦",
+const COUNTRY_CODES: Record<string, string> = {
+  "United Kingdom": "GB",
+  Germany: "DE",
+  France: "FR",
+  Italy: "IT",
+  Sweden: "SE",
+  Netherlands: "NL",
+  Belgium: "BE",
+  Norway: "NO",
+  Denmark: "DK",
+  Finland: "FI",
+  Switzerland: "CH",
+  Austria: "AT",
+  Ireland: "IE",
+  Portugal: "PT",
+  Spain: "ES",
+  Greece: "GR",
+  Poland: "PL",
+  "Czech Republic": "CZ",
+  Hungary: "HU",
+  Romania: "RO",
+  "United States": "US",
+  USA: "US",
+  Canada: "CA",
+  Australia: "AU",
+  Somalia: "SO",
+  Ethiopia: "ET",
+  Kenya: "KE",
+  Nigeria: "NG",
+  Ghana: "GH",
+  Eritrea: "ER",
+  Djibouti: "DJ",
+  UAE: "AE",
+  "Saudi Arabia": "SA",
+  "South Africa": "ZA",
 };
 
-function flagFor(country: string | null): string {
-  return COUNTRY_FLAGS[country ?? ""] ?? "ðŸŒ";
+const EMPTY_VALUE = "-";
+const PAGE_GAP = "...";
+
+function countryCodeToFlag(countryCode: string): string {
+  return String.fromCodePoint(
+    ...countryCode
+      .toUpperCase()
+      .split("")
+      .map((char) => 0x1f1e6 + char.charCodeAt(0) - 65),
+  );
 }
 
-// â”€â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function flagFor(country: string | null): string {
+  const countryCode = country ? COUNTRY_CODES[country] : null;
+  return countryCode ? countryCodeToFlag(countryCode) : String.fromCodePoint(0x1f30d);
+}
 
 function formatDate(iso: string | null): string {
-  if (!iso) return "â€”";
+  if (!iso) return EMPTY_VALUE;
   return new Date(iso).toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "short",
@@ -95,7 +104,7 @@ function formatDate(iso: string | null): string {
 }
 
 function formatAmount(amount: number | null, currency: string | null): string {
-  if (!amount || !currency) return "â€”";
+  if (amount == null || !currency) return EMPTY_VALUE;
   try {
     return new Intl.NumberFormat("en-GB", {
       style: "currency",
@@ -113,7 +122,7 @@ const PROCESSED = new Set(["Completed", "Deposited", "Paid"]);
 const CANCELLED = new Set(["Cancelled", "Cancel", "Rejected"]);
 
 function StatusBadge({ status }: { status: string | null }) {
-  if (!status) return <span className="text-xs text-slate-400">â€”</span>;
+  if (!status) return <span className="text-xs text-slate-400">{EMPTY_VALUE}</span>;
   if (PROCESSED.has(status)) {
     return (
       <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
@@ -153,7 +162,7 @@ function FilterBar({ filters, onChange, onSlaFilter, countries }: FilterBarProps
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         <input
           type="text"
-          placeholder="Search by ref, name, email, or phoneâ€¦"
+          placeholder="Search by ref, name, email, or phone..."
           value={filters.search}
           onChange={(e) => onChange("search", e.target.value)}
           className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-4 text-sm text-slate-700 shadow-sm placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
@@ -197,7 +206,7 @@ function FilterBar({ filters, onChange, onSlaFilter, countries }: FilterBarProps
               : "border-amber-300 bg-white text-amber-700 hover:bg-amber-50"
           }`}
         >
-          âš ï¸ Late Transfers (&gt; 24 Hrs)
+          Late Transfers (&gt; 24 Hrs)
         </button>
         <button
           onClick={() => onSlaFilter(filters.slaFilter === "late_somalia" ? "" : "late_somalia")}
@@ -207,7 +216,7 @@ function FilterBar({ filters, onChange, onSlaFilter, countries }: FilterBarProps
               : "border-red-300 bg-white text-red-700 hover:bg-red-50"
           }`}
         >
-          ðŸš¨ Late Somalia (&gt; 15 Mins)
+          Late Somalia (&gt; 15 Mins)
         </button>
       </div>
     </div>
@@ -229,13 +238,13 @@ function Pagination({ page, pages, total, limit, onPage }: PaginationProps) {
   const from = total === 0 ? 0 : (page - 1) * limit + 1;
   const to = Math.min(page * limit, total);
 
-  const nums: (number | "â€¦")[] = [];
+  const nums: (number | typeof PAGE_GAP)[] = [];
   const delta = 2;
   for (let i = 1; i <= pages; i++) {
     if (i === 1 || i === pages || (i >= page - delta && i <= page + delta)) {
       nums.push(i);
-    } else if (nums[nums.length - 1] !== "â€¦") {
-      nums.push("â€¦");
+    } else if (nums[nums.length - 1] !== PAGE_GAP) {
+      nums.push(PAGE_GAP);
     }
   }
 
@@ -243,7 +252,7 @@ function Pagination({ page, pages, total, limit, onPage }: PaginationProps) {
   return (
     <div className="flex flex-col items-center gap-3 rounded-2xl border border-slate-200/80 bg-white px-4 py-3 shadow-sm sm:flex-row sm:justify-between">
       <p className="text-xs text-slate-500">
-        Showing {from}â€“{to} of {total.toLocaleString()} transfers
+        Showing {from}-{to} of {total.toLocaleString()} transfers
       </p>
       <div className="flex items-center gap-1">
         <button
@@ -255,9 +264,9 @@ function Pagination({ page, pages, total, limit, onPage }: PaginationProps) {
           <ChevronLeft className="h-4 w-4" />
         </button>
         {nums.map((n, i) =>
-          n === "â€¦" ? (
+          n === PAGE_GAP ? (
             <span key={`e${i}`} className="px-1 text-xs text-slate-400">
-              â€¦
+              {PAGE_GAP}
             </span>
           ) : (
             <button
@@ -292,7 +301,7 @@ function TransferCard({ transfer }: { transfer: ApiTransfer }) {
   const router = useRouter();
   return (
     <article
-      onClick={() => router.push(`/customer/${transfer.customer_id}`)}
+      onClick={() => router.push(`/transfers/${transfer.id}`)}
       className="flex cursor-pointer flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow-md"
     >
       <div className="flex items-start justify-between gap-3">
@@ -300,7 +309,7 @@ function TransferCard({ transfer }: { transfer: ApiTransfer }) {
           <span className="text-3xl leading-none">{flagFor(transfer.customer_country)}</span>
           <div>
             <p className="text-sm font-semibold text-slate-900">
-              {transfer.full_name ?? "â€”"}
+              {transfer.full_name ?? EMPTY_VALUE}
             </p>
             <p className="text-xs text-slate-500">#{transfer.customer_id}</p>
           </div>
@@ -323,7 +332,7 @@ function TransferCard({ transfer }: { transfer: ApiTransfer }) {
       </div>
       <div className="flex items-center justify-between text-xs text-slate-500">
         <span>
-          {flagFor(transfer.destination_country)} {transfer.destination_country ?? "â€”"}
+          {flagFor(transfer.destination_country)} {transfer.destination_country ?? EMPTY_VALUE}
         </span>
         <span className="font-semibold text-slate-700">
           {formatAmount(transfer.send_amount, transfer.send_currency)}
@@ -341,27 +350,27 @@ function TransferRow({ transfer }: { transfer: ApiTransfer }) {
   return (
     <tr
       className="group cursor-pointer border-t border-slate-100 transition hover:bg-slate-50/70"
-      onClick={() => router.push(`/customer/${transfer.customer_id}`)}
+      onClick={() => router.push(`/transfers/${transfer.id}`)}
     >
       <td className="whitespace-nowrap py-3 pl-5 pr-3 text-xs text-slate-500">
         {formatDate(transfer.created_at)}
       </td>
       <td className="px-3 py-3 font-mono text-xs text-slate-700">
-        {transfer.transaction_ref ?? <span className="italic text-slate-400">â€”</span>}
+        {transfer.transaction_ref ?? <span className="italic text-slate-400">{EMPTY_VALUE}</span>}
       </td>
       <td className="px-3 py-3 font-mono text-xs text-slate-500">
-        {transfer.data_field_id ?? <span className="italic text-slate-400">â€”</span>}
+        {transfer.data_field_id ?? <span className="italic text-slate-400">{EMPTY_VALUE}</span>}
       </td>
       <td className="px-3 py-3">
         <div className="flex items-center gap-2">
           <span className="text-xl leading-none">{flagFor(transfer.customer_country)}</span>
           <span className="text-sm font-semibold text-slate-800">
-            {transfer.full_name ?? "â€”"}
+            {transfer.full_name ?? EMPTY_VALUE}
           </span>
         </div>
       </td>
       <td className="whitespace-nowrap px-3 py-3 text-sm text-slate-600">
-        {flagFor(transfer.destination_country)} {transfer.destination_country ?? "â€”"}
+        {flagFor(transfer.destination_country)} {transfer.destination_country ?? EMPTY_VALUE}
       </td>
       <td className="whitespace-nowrap px-3 py-3 text-sm font-semibold text-slate-700">
         {formatAmount(transfer.send_amount, transfer.send_currency)}
@@ -371,7 +380,7 @@ function TransferRow({ transfer }: { transfer: ApiTransfer }) {
       </td>
       <td className="py-3 pl-3 pr-5">
         <button
-          onClick={(e) => { e.stopPropagation(); router.push(`/customer/${transfer.customer_id}`); }}
+          onClick={(e) => { e.stopPropagation(); router.push(`/transfers/${transfer.id}`); }}
           className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 opacity-0 shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 group-hover:opacity-100"
         >
           View <ChevronRight className="h-3.5 w-3.5" />
@@ -473,7 +482,7 @@ export default function TransfersPage() {
           Transfers
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          {loading ? "Loadingâ€¦" : `${total.toLocaleString()} transfer${total === 1 ? "" : "s"}`}
+          {loading ? "Loading..." : `${total.toLocaleString()} transfer${total === 1 ? "" : "s"}`}
         </p>
       </div>
 
@@ -482,7 +491,7 @@ export default function TransfersPage() {
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-16 text-slate-400">
           <Loader2 className="h-5 w-5 animate-spin" />
-          <span className="text-sm">Loading transfersâ€¦</span>
+          <span className="text-sm">Loading transfers...</span>
         </div>
       ) : transfers.length === 0 ? (
         <EmptyState />

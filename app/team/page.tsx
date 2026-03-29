@@ -78,7 +78,7 @@ interface ModalProps {
 function UserModal({ user, onClose, onSaved }: ModalProps) {
   const isEdit = !!user;
 
-  // Parse allowed_regions — may arrive as a JSON string from MySQL
+  // Parse allowed_regions - may arrive as a JSON string from MySQL
   const initialRegions: string[] = (() => {
     if (!user?.allowed_regions) return ["UK", "EU"];
     if (Array.isArray(user.allowed_regions)) return user.allowed_regions as string[];
@@ -306,7 +306,7 @@ function UserModal({ user, onClose, onSaved }: ModalProps) {
           </button>
         </div>
 
-        {/* password — only on create */}
+        {/* password - only on create */}
         {!isEdit && (          <div className="space-y-1">
             <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Temporary Password
@@ -323,7 +323,7 @@ function UserModal({ user, onClose, onSaved }: ModalProps) {
           </div>
         )}
 
-        {/* active toggle — only on edit */}
+        {/* active toggle - only on edit */}
         {isEdit && (
           <div className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3">
             <span className="text-sm font-medium text-slate-700">Active Status</span>
@@ -344,7 +344,7 @@ function UserModal({ user, onClose, onSaved }: ModalProps) {
         )}
       </form>
 
-      {/* reset-password section — edit only */}
+      {/* reset-password section - edit only */}
       {isEdit && (
         <div className="mt-4 border-t border-slate-100 pt-4">
           {!showResetPw ? (
@@ -432,7 +432,7 @@ export default function TeamPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Team</h1>
           <p className="mt-1 text-sm text-slate-500">
-            {loading ? "Loading…" : `${users.length} staff member${users.length !== 1 ? "s" : ""}`}
+            {loading ? "Loading..." : `${users.length} staff member${users.length !== 1 ? "s" : ""}`}
           </p>
         </div>
         <button
@@ -449,7 +449,7 @@ export default function TeamPage() {
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-16 text-slate-400">
             <Loader2 className="h-5 w-5 animate-spin" />
-            <span className="text-sm">Loading team…</span>
+            <span className="text-sm">Loading team...</span>
           </div>
         ) : users.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">

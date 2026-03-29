@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/src/lib/db";
 import { requireAuth } from "@/src/lib/auth";
-import { buildTransferFence } from "@/src/lib/regionFence";
+import { buildCountryFence, buildTransferFence } from "@/src/lib/regionFence";
 import type { RowDataPacket } from "mysql2";
 
 const VALID_DAYS = new Set([1, 2, 7, 14, 30, 60]);
@@ -12,6 +12,7 @@ const VALID_DAYS = new Set([1, 2, 7, 14, 30, 60]);
  * Returns transfer volume broken down by:
  *   byCurrency    – send_currency, total_transfers, total_revenue
  *   byDestination – destination_country, total_transfers, total_revenue
+ *   byOrigin      – customers.country, total_transfers, total_revenue
  *
  * Respects agent allowed_regions RLS fence and ?days= lookback window.
  * Protected: Admin and Manager roles only.
@@ -30,6 +31,9 @@ export async function GET(req: NextRequest) {
   const tFence  = buildTransferFence(auth.allowed_regions ?? ["UK", "EU"], auth.role === "Admin");
   const tAnd    = tFence ? ` AND ${tFence.sql}` : "";
   const tParams = tFence?.params ?? [];
+  const cFence  = buildCountryFence(auth.allowed_regions ?? ["UK", "EU"], auth.role === "Admin");
+  const cAnd    = cFence ? ` AND c.${cFence.sql}` : "";
+  const cParams = cFence?.params ?? [];
 
   try {
     const conn = await pool.getConnection();
@@ -58,6 +62,19 @@ export async function GET(req: NextRequest) {
         [days, ...tParams],
       );
 
+      const [byOrigin] = await conn.query<RowDataPacket[]>(
+        `SELECT   c.country AS origin_country,
+                  COUNT(*)         AS total_transfers,
+                  SUM(t.send_amount) AS total_revenue
+         FROM     transfers t
+         JOIN     customers c ON c.customer_id = t.customer_id
+         WHERE    t.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+                  ${cAnd}
+         GROUP BY c.country
+         ORDER BY total_revenue DESC`,
+        [days, ...cParams],
+      );
+
       return NextResponse.json({
         byCurrency: byCurrency.map((r) => ({
           currency:        r.send_currency as string | null,
@@ -66,6 +83,11 @@ export async function GET(req: NextRequest) {
         })),
         byDestination: byDestination.map((r) => ({
           destination:     r.destination_country as string | null,
+          total_transfers: Number(r.total_transfers),
+          total_revenue:   Number(r.total_revenue ?? 0),
+        })),
+        byOrigin: byOrigin.map((r) => ({
+          origin:          r.origin_country as string | null,
           total_transfers: Number(r.total_transfers),
           total_revenue:   Number(r.total_revenue ?? 0),
         })),

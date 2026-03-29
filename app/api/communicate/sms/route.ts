@@ -58,6 +58,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(existing, { status: 200 });
     }
 
+    // 2-hour cooldown between outbound messages to the same customer
+    const [recentRows] = await pool.execute<RowDataPacket[]>(
+      `SELECT created_at FROM interactions
+       WHERE customer_id = ? AND type IN ('SMS','Email') AND direction = 'outbound'
+       ORDER BY created_at DESC LIMIT 1`,
+      [payload.customerId]
+    );
+    if (recentRows.length > 0) {
+      const lastSentAt = new Date(recentRows[0].created_at).getTime();
+      const msSince = Date.now() - lastSentAt;
+      const cooldownMs = 2 * 60 * 60 * 1000;
+      if (msSince < cooldownMs) {
+        const minsLeft = Math.ceil((cooldownMs - msSince) / 60000);
+        const display = minsLeft >= 60 ? `${Math.floor(minsLeft / 60)}h ${minsLeft % 60}m` : `${minsLeft}m`;
+        return jsonError(
+          `This customer was contacted recently. Please wait ${display} before sending another message.`,
+          429
+        );
+      }
+    }
+
     const [customerRows] = await pool.execute<RowDataPacket[]>(
       "SELECT phone_number, country FROM customers WHERE customer_id = ? LIMIT 1",
       [payload.customerId]

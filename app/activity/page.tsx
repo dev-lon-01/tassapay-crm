@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Activity, Filter, Loader2, Phone, MessageSquare, FileText, Globe, ChevronDown } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { Activity, Filter, Loader2, Phone, MessageSquare, FileText, Globe, ChevronDown, PlayCircle, User, CalendarDays } from "lucide-react";
 import { apiFetch } from "@/src/lib/apiFetch";
 import { useAuth } from "@/src/context/AuthContext";
 import { IndependentDialer } from "@/src/components/IndependentDialer";
+import Link from "next/link";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -22,6 +24,12 @@ interface ActivityEntry {
   direction:             string | null;
   metadata:              string | null;
   customer_id:           string | null;
+  recording_url:         string | null;
+}
+
+interface AgentOption {
+  id: number;
+  name: string;
 }
 
 type TypeFilter = "all" | "Call" | "SMS" | "Note";
@@ -66,9 +74,21 @@ const PAGE_SIZE = 50;
 
 export default function ActivityPage() {
   const { user } = useAuth();
+  const searchParams = useSearchParams();
+
+  // Hydrate type filter from URL ?type= param (e.g. linked from dashboard pills)
+  const initialType = (() => {
+    const t = searchParams.get("type");
+    if (t === "Call" || t === "SMS" || t === "Note") return t;
+    return "all" as TypeFilter;
+  })();
 
   const [region, setRegion]         = useState<string>("all");
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>(initialType);
+  const [agentId, setAgentId]       = useState<string>("");
+  const [dateFrom, setDateFrom]     = useState<string>("");
+  const [dateTo, setDateTo]         = useState<string>("");
+  const [agents, setAgents]         = useState<AgentOption[]>([]);
   const [entries, setEntries]       = useState<ActivityEntry[]>([]);
   const [page, setPage]             = useState(1);
   const [hasMore, setHasMore]       = useState(false);
@@ -83,10 +103,27 @@ export default function ActivityPage() {
     ? ["UK", "EU"]
     : (user?.allowed_regions ?? ["UK", "EU"]);
 
+  // Load agent list for filter (admin sees all, non-admin sees only themselves)
+  useEffect(() => {
+    if (user?.role === "Admin") {
+      apiFetch("/api/users")
+        .then((r) => r.json())
+        .then((data: { id: number; name: string; is_active: number }[]) => {
+          if (Array.isArray(data)) {
+            setAgents(data.filter((u) => u.is_active).map((u) => ({ id: u.id, name: u.name })));
+          }
+        })
+        .catch(() => {});
+    }
+  }, [user?.role]);
+
   function buildUrl(p: number) {
     const params = new URLSearchParams();
     if (region !== "all") params.set("region", region);
     if (typeFilter !== "all") params.set("type", typeFilter);
+    if (agentId) params.set("agentId", agentId);
+    if (dateFrom) params.set("from", dateFrom);
+    if (dateTo) params.set("to", dateTo);
     params.set("limit", String(PAGE_SIZE));
     params.set("page", String(p));
     return `/api/activity/agents?${params.toString()}`;
@@ -112,7 +149,7 @@ export default function ActivityPage() {
         setLoading(false);
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [region, typeFilter]);
+  }, [region, typeFilter, agentId, dateFrom, dateTo]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -140,11 +177,42 @@ export default function ActivityPage() {
           <p className="mt-1 text-sm text-slate-500">Recent agent interactions across your regions</p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Independent Dialer */}
           <div className="relative" ref={dialerRef}>
             <IndependentDialer />
           </div>
+
+          {/* Agent filter (admin only) */}
+          {user?.role === "Admin" && agents.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <User className="h-4 w-4 text-slate-400" />
+              <select
+                value={agentId}
+                onChange={(e) => setAgentId(e.target.value)}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              >
+                <option value="">All Agents</option>
+                {agents.map((a) => (
+                  <option key={a.id} value={String(a.id)}>{a.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* My Activity toggle (non-admin) */}
+          {user?.role !== "Admin" && (
+            <button
+              onClick={() => setAgentId(agentId ? "" : String(user?.id ?? ""))}
+              className={`rounded-xl border px-3 py-2 text-sm font-medium shadow-sm transition ${
+                agentId
+                  ? "border-indigo-300 bg-indigo-50 text-indigo-700"
+                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              {agentId ? "My Activity" : "All Activity"}
+            </button>
+          )}
 
           {/* Region filter */}
           <div className="flex items-center gap-1.5">
@@ -163,22 +231,50 @@ export default function ActivityPage() {
         </div>
       </div>
 
-      {/* Type filter tabs */}
-      <div className="flex gap-1 rounded-xl border border-slate-200/80 bg-white p-1 shadow-sm w-fit">
-        {TYPE_TABS.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setTypeFilter(tab.key)}
-            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-              typeFilter === tab.key
-                ? "bg-indigo-600 text-white shadow"
-                : "text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-            }`}
-          >
-            {tab.icon}
-            {tab.label}
-          </button>
-        ))}
+      {/* Type filter tabs + Date range */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex gap-1 rounded-xl border border-slate-200/80 bg-white p-1 shadow-sm w-fit">
+          {TYPE_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setTypeFilter(tab.key)}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                typeFilter === tab.key
+                  ? "bg-indigo-600 text-white shadow"
+                  : "text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+              }`}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Date range filters */}
+        <div className="flex items-center gap-1.5">
+          <CalendarDays className="h-4 w-4 text-slate-400" />
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 shadow-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-400"
+          />
+          <span className="text-xs text-slate-400">to</span>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 shadow-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-400"
+          />
+          {(dateFrom || dateTo) && (
+            <button
+              onClick={() => { setDateFrom(""); setDateTo(""); }}
+              className="text-xs font-semibold text-indigo-600 hover:text-indigo-800"
+            >
+              Clear
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Timeline */}
@@ -186,7 +282,7 @@ export default function ActivityPage() {
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-16 text-slate-400">
             <Loader2 className="h-5 w-5 animate-spin" />
-            <span className="text-sm">Loading activity…</span>
+            <span className="text-sm">Loading activity...</span>
           </div>
         ) : error ? (
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
@@ -218,13 +314,19 @@ export default function ActivityPage() {
                       {entry.customer_name ? (
                         <>
                           {" "}with{" "}
-                          <span className="font-semibold text-slate-900">{entry.customer_name}</span>
+                          {entry.customer_id ? (
+                            <Link href={`/customer/${entry.customer_id}`} className="font-semibold text-indigo-700 hover:underline">
+                              {entry.customer_name}
+                            </Link>
+                          ) : (
+                            <span className="font-semibold text-slate-900">{entry.customer_name}</span>
+                          )}
                         </>
                       ) : entry.direction === "inbound" && entry.customer_id === null ? (
                         <>
                           {" "}from{" "}
                           <span className="font-semibold text-slate-500">
-                            Unknown Number: {(() => { try { return (JSON.parse(entry.metadata ?? "{}") as { from?: string }).from ?? "—"; } catch { return "—"; } })()}
+                            Unknown Number: {(() => { try { return (JSON.parse(entry.metadata ?? "{}") as { from?: string }).from ?? "-"; } catch { return "-"; } })()}
                           </span>
                         </>
                       ) : null}
@@ -245,8 +347,8 @@ export default function ActivityPage() {
                       </p>
                     )}
 
-                    {/* Call duration + phone number */}
-                    <div className="flex items-center gap-3">
+                    {/* Call duration + phone + recording */}
+                    <div className="flex flex-wrap items-center gap-3">
                       {entry.call_duration_seconds != null && entry.call_duration_seconds > 0 && (
                         <span className="flex items-center gap-1 text-[11px] text-slate-400">
                           <Phone size={10} />
@@ -255,6 +357,17 @@ export default function ActivityPage() {
                       )}
                       {entry.phone_number && (
                         <span className="text-[11px] text-slate-400">{entry.phone_number}</span>
+                      )}
+                      {entry.recording_url && (
+                        <a
+                          href={entry.recording_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-[11px] font-medium text-indigo-600 hover:text-indigo-800"
+                        >
+                          <PlayCircle size={12} />
+                          Play Recording
+                        </a>
                       )}
                     </div>
 

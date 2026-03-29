@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Loader2,
@@ -14,17 +14,22 @@ import {
   ChevronLeft,
   ChevronRight,
   UserCheck,
+  Phone,
+  FileText,
 } from "lucide-react";
 import { apiFetch } from "@/src/lib/apiFetch";
+import { normalizePhone } from "@/src/lib/phoneUtils";
+import { LogCallModal } from "@/src/components/LogCallModal";
 import {
   useQueue,
   type QueueCustomer,
   type QueueTab,
 } from "@/src/context/QueueContext";
+import { useTwilioVoice, type EndedCall } from "@/src/context/TwilioVoiceContext";
 
 // ─── types ────────────────────────────────────────────────────────────────────────────────────
 
-type QueueType = "default" | "dormant" | "new" | "incomplete";
+type QueueType = "default" | "dormant" | "new" | "incomplete" | "portfolio" | "hot-leads";
 
 const DORMANT_TIMEFRAMES = [
   { value: 7,   label: "Over 7 Days"   },
@@ -48,6 +53,8 @@ const DEFAULT_TIMEFRAME: Record<QueueType, number> = {
   dormant:     7,
   new:         7,
   incomplete:  0,
+  portfolio:   0,
+  "hot-leads": 0,
 };
 
 const PAGE_SIZE = 50;
@@ -105,9 +112,19 @@ function ReasonBadge({ customer }: { customer: QueueCustomer }) {
   );
 }
 
+// ─── log call modal ────────────────────────────────────────────────────────────────────────────
+
 // ─── queue card ─────────────────────────────────────────────────────────────────────────────────
 
-function QueueCard({ customer, tab }: { customer: QueueCustomer; tab: QueueTab }) {
+function QueueCard({
+  customer,
+  tab,
+  onLogCall,
+}: {
+  customer: QueueCustomer;
+  tab: QueueTab;
+  onLogCall: (c: QueueCustomer) => void;
+}) {
   const router = useRouter();
   const { setActiveTab } = useQueue();
 
@@ -138,13 +155,37 @@ function QueueCard({ customer, tab }: { customer: QueueCustomer; tab: QueueTab }
         </span>
       </div>
       <p className="text-base font-bold leading-tight text-slate-900">
-        {customer.full_name ?? "—"}
+        {customer.full_name ?? "-"}
       </p>
       <div className="mt-1 flex items-center gap-1.5 text-slate-500">
         <MapPin className="h-3.5 w-3.5 shrink-0" />
-        <span className="text-sm">{flagFor(customer.country)} {customer.country ?? "—"}</span>
+        <span className="text-sm">{flagFor(customer.country)} {customer.country ?? "-"}</span>
       </div>
-      <p className="mt-1.5 font-mono text-xs text-slate-400">#{customer.customer_id}</p>
+      {customer.phone_number && (
+        <div className="mt-1 flex items-center gap-1.5 text-slate-500">
+          <Phone className="h-3.5 w-3.5 shrink-0" />
+          <span className="text-sm">{normalizePhone(customer.phone_number, customer.country)}</span>
+        </div>
+      )}
+      <div className="mt-2 flex items-center gap-2">
+        <p className="font-mono text-xs text-slate-400">#{customer.customer_id}</p>
+        <div className="ml-auto flex gap-1.5">
+          <button
+            onClick={(e) => { e.stopPropagation(); onLogCall(customer); }}
+            className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-200 active:scale-95"
+          >
+            <FileText className="h-3 w-3" />
+            Log Call
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); open(); }}
+            className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 active:scale-95"
+          >
+            <ArrowRight className="h-3 w-3" />
+            View
+          </button>
+        </div>
+      </div>
     </article>
   );
 }
@@ -186,26 +227,28 @@ const TABS: { key: QueueTab; label: string }[] = [
 
 export default function MyTasksPage() {
   const router = useRouter();
-  const { rawCustomers, setRawCustomers, activeTab, setActiveTab, sortedQueue } = useQueue();
+  const { setRawCustomers, setSortMode, activeTab, setActiveTab, sortedQueue } = useQueue();
+  const { lastEndedCall, clearLastEndedCall } = useTwilioVoice();
 
   const [loading,         setLoading        ] = useState(true);
   const [searchQuery,     setSearchQuery    ] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedCountry, setSelectedCountry] = useState("All");
   const [countries,       setCountries      ] = useState<string[]>([]);
-  const [queueType,       setQueueTypeState ] = useState<QueueType>("default");
-  const [timeframe,       setTimeframe      ] = useState<number>(30);
+  const [queueType,       setQueueTypeState ] = useState<QueueType>("new");
+  const [timeframe,       setTimeframe      ] = useState<number>(7);
   const [sortDir,         setSortDir        ] = useState<"desc" | "asc">("desc");
   const [page,            setPage           ] = useState(1);
   const [total,           setTotal          ] = useState(0);
+  const [logCallCustomer, setLogCallCustomer] = useState<QueueCustomer | null>(null);
 
-  // — debounce search 350 ms
+  // - debounce search 350 ms
   useEffect(() => {
     const t = setTimeout(() => { setDebouncedSearch(searchQuery); setPage(1); }, 350);
     return () => clearTimeout(t);
   }, [searchQuery]);
 
-  // — load country list once
+  // - load country list once
   useEffect(() => {
     apiFetch("/api/countries")
       .then((r) => r.json())
@@ -213,13 +256,19 @@ export default function MyTasksPage() {
       .catch(() => {});
   }, []);
 
-  // — reset timeframe when queue type changes
+  // - reset timeframe when queue type changes
   function handleQueueTypeChange(val: string) {
     const qt = val as QueueType;
     setQueueTypeState(qt);
+    setSortMode(qt === "default" ? "smart" : "server");
     setTimeframe(DEFAULT_TIMEFRAME[qt]);
     setPage(1);
   }
+
+  useEffect(() => {
+    setSortMode(queueType === "default" ? "smart" : "server");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queueType]);
 
   function handleCountryChange(v: string) {
     setSelectedCountry(v);
@@ -231,7 +280,7 @@ export default function MyTasksPage() {
     setPage(1);
   }
 
-  // — fetch tasks whenever any filter or page changes
+  // - fetch tasks whenever any filter or page changes
   useEffect(() => {
     setLoading(true);
     const p = new URLSearchParams();
@@ -256,7 +305,7 @@ export default function MyTasksPage() {
   const queue       = sortedQueue(activeTab);
   const tabCount    = (key: QueueTab) => loading ? 0 : sortedQueue(key).length;
   const activeCount = tabCount("uncontacted") + tabCount("follow-up");
-  const isFiltered    = !!debouncedSearch || selectedCountry !== "All" || queueType !== "default" || sortDir !== "desc";
+  const isFiltered    = !!debouncedSearch || selectedCountry !== "All" || queueType !== "new" || sortDir !== "desc";
   const showTimeframe = queueType === "dormant" || queueType === "new";
   const totalPages    = Math.ceil(total / PAGE_SIZE);
 
@@ -268,7 +317,7 @@ export default function MyTasksPage() {
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">My Tasks</h1>
         <p className="mt-1 text-sm text-slate-500">
           {loading
-            ? "Loading…"
+            ? "Loading..."
             : `${total} customer${total === 1 ? "" : "s"} need attention`}
         </p>
       </div>
@@ -283,7 +332,7 @@ export default function MyTasksPage() {
             type="search"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search name, phone, ID…"
+            placeholder="Search name, phone, ID..."
             className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-800 shadow-sm placeholder:text-slate-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-emerald-400"
           />
         </div>
@@ -302,12 +351,14 @@ export default function MyTasksPage() {
           {/* queue logic */}
           <FilterSelect value={queueType} onChange={handleQueueTypeChange}>
             <option value="default">Default View</option>
+            <option value="portfolio">My Portfolio</option>
+            <option value="hot-leads">Ready to Transact (0 Transfers)</option>
             <option value="incomplete">Incomplete Profiles</option>
             <option value="new">Recently Registered</option>
             <option value="dormant">Dormant Users</option>
           </FilterSelect>
 
-          {/* timeframe — conditional */}
+          {/* timeframe - conditional */}
           {showTimeframe && (
             <FilterSelect value={timeframe} onChange={handleTimeframeChange}>
               {(queueType === "dormant" ? DORMANT_TIMEFRAMES : NEW_TIMEFRAMES).map(
@@ -327,7 +378,7 @@ export default function MyTasksPage() {
 
         {isFiltered && (
           <button
-            onClick={() => { setSearchQuery(""); setSelectedCountry("All"); handleQueueTypeChange("default"); setSortDir("desc"); setPage(1); }}
+            onClick={() => { setSearchQuery(""); setSelectedCountry("All"); handleQueueTypeChange("new"); setSortDir("desc"); setPage(1); }}
             className="mt-1.5 text-xs font-semibold text-emerald-600 hover:text-emerald-800"
           >
             × Clear filters
@@ -366,7 +417,7 @@ export default function MyTasksPage() {
           {loading ? (
             <div className="flex items-center justify-center gap-2 py-14 text-slate-400">
               <Loader2 className="h-5 w-5 animate-spin" />
-              <span className="text-sm">Loading tasks…</span>
+              <span className="text-sm">Loading tasks...</span>
             </div>
           ) : queue.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 py-14 text-center">
@@ -395,7 +446,7 @@ export default function MyTasksPage() {
               )}
               <div className="space-y-3">
                 {queue.map((c) => (
-                  <QueueCard key={c.customer_id} customer={c} tab={activeTab} />
+                  <QueueCard key={c.customer_id} customer={c} tab={activeTab} onLogCall={setLogCallCustomer} />
                 ))}
               </div>
             </>
@@ -426,6 +477,19 @@ export default function MyTasksPage() {
           )}
         </div>
       </div>
+
+      {/* log call modal */}
+      {logCallCustomer && (
+        <LogCallModal
+          customer={logCallCustomer}
+          onClose={() => {
+            setLogCallCustomer(null);
+            if (lastEndedCall) clearLastEndedCall();
+          }}
+          callSource={lastEndedCall && lastEndedCall.customerId === logCallCustomer.customer_id ? "twilio" : "offline"}
+          twilioData={lastEndedCall && lastEndedCall.customerId === logCallCustomer.customer_id ? lastEndedCall : null}
+        />
+      )}
     </div>
   );
 }

@@ -33,6 +33,7 @@ console.log("\u2713  Table 'users' created (or already exists)");
 console.log("\u2713  Table 'customers' created (or already exists)");
 console.log("\u2713  Table 'interactions' created (or already exists)");
 console.log("\u2713  Table 'transfers' created (or already exists)");
+console.log("\u2713  Table 'payments' created (or already exists)");
 console.log("\u2713  Table 'templates' created (or already exists)");
 console.log("✓  Table 'sync_log' created (or already exists)\n");
 

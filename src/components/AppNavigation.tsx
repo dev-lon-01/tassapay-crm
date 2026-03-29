@@ -4,9 +4,9 @@ import { useState, type ComponentType } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  ArrowLeftRight, BarChart2, Bell, Bot, CheckSquare, FileText,
+  ArrowLeftRight, Award, BarChart2, Bell, Bot, CheckSquare, CreditCard, FileText,
   LayoutDashboard, ListFilter, LogOut, Menu, RefreshCw, Activity,
-  ShieldAlert, Users, UsersRound, X, UserPlus,
+  ShieldAlert, Users, UsersRound, X, UserPlus, Scale,
 } from "lucide-react";
 import { useAuth } from "@/src/context/AuthContext";
 
@@ -17,6 +17,7 @@ type NavItem = {
 };
 
 const navItems: NavItem[] = [
+  { label: "My Stats",    href: "/my-dashboard", icon: Award },
   { label: "Directory",   href: "/directory",    icon: Users },
   { label: "Leads",       href: "/leads",        icon: UserPlus },
   { label: "Transfers",   href: "/transfers",    icon: ArrowLeftRight },
@@ -29,10 +30,13 @@ const navItems: NavItem[] = [
 ];
 
 const adminItems: NavItem[] = [
-  { label: "Analytics", href: "/analytics",           icon: BarChart2   },
-  { label: "Team",      href: "/team",                 icon: UsersRound  },
-  { label: "Sync",      href: "/sync",                 icon: RefreshCw   },
-  { label: "Alerts",    href: "/settings/alerts",      icon: Bell        },
+  { label: "Analytics",    href: "/analytics",                  icon: BarChart2   },
+  { label: "Commissions",  href: "/commissions",                icon: Award       },
+  { label: "Payments",     href: "/admin/payments",             icon: CreditCard  },
+  { label: "Exceptions",   href: "/admin/finance/exceptions",   icon: Scale       },
+  { label: "Team",         href: "/team",                       icon: UsersRound  },
+  { label: "Sync",         href: "/sync",                       icon: RefreshCw   },
+  { label: "Alerts",       href: "/settings/alerts",            icon: Bell        },
 ];
 
 // Rule of 4: only 3 primary links + "More" button on mobile
@@ -44,11 +48,13 @@ const bottomItems: NavItem[] = [
 
 // All other links live in the More drawer
 const drawerItems: NavItem[] = [
+  { label: "My Stats",    href: "/my-dashboard", icon: Award },
   { label: "Leads",       href: "/leads",        icon: UserPlus },
   { label: "Transfers",   href: "/transfers",    icon: ArrowLeftRight },
   { label: "QA",          href: "/qa-transfers", icon: ShieldAlert },
   { label: "Templates",   href: "/templates",    icon: FileText },
   { label: "Automations", href: "/automations",  icon: Bot },
+  { label: "Dropdowns",   href: "/settings/dropdowns", icon: ListFilter },
 ];
 
 export function AppNavigation() {
@@ -132,7 +138,7 @@ export function AppNavigation() {
 
             {/* Nav body */}
             <div className="flex-1 space-y-1 overflow-y-auto px-3 py-3">
-              {/* Dashboard — only visible to Admin or users with can_view_dashboard */}
+              {/* Dashboard - only visible to Admin or users with can_view_dashboard */}
               {(user?.role === "Admin" || user?.can_view_dashboard) && (
                 <Link
                   href="/dashboard"
@@ -212,14 +218,14 @@ export function AppNavigation() {
       {/* ── Desktop sidebar (unchanged) ───────────────────────────────── */}
       <aside className="fixed bottom-0 top-[73px] hidden w-64 px-3 pb-3 md:block">
         <div className="flex h-full flex-col rounded-3xl border border-slate-200/70 bg-white/85 shadow-xl shadow-slate-900/5 backdrop-blur-xl">
-          {/* Scrollable nav links — hidden scrollbar */}
+          {/* Scrollable nav links - hidden scrollbar */}
           <nav
             className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
             <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
               Navigation
             </p>
-            {/* Dashboard — only visible to Admin or users with can_view_dashboard */}
+            {/* Dashboard - only visible to Admin or users with can_view_dashboard */}
             {(user?.role === "Admin" || user?.can_view_dashboard) && (
               <Link
                 href="/dashboard"
@@ -279,7 +285,7 @@ export function AppNavigation() {
             )}
           </nav>
 
-          {/* Pinned footer — always visible */}
+          {/* Pinned footer - always visible */}
           <div className="shrink-0 space-y-2 border-t border-slate-100 p-3">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">

@@ -88,7 +88,7 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
-                  placeholder="••••••••"
+                  placeholder="--------"
                 />
               </div>
             </div>
@@ -109,7 +109,7 @@ export default function LoginPage() {
               {loading ? (
                 <>
                   <Loader2 size={15} className="animate-spin" />
-                  Signing in…
+                  Signing in...
                 </>
               ) : (
                 "Sign In"

@@ -9,9 +9,9 @@ import type { RowDataPacket } from "mysql2";
  *
  * Returns three buckets of pending transfers that breach SLAs:
  *
- *  somaliaUrgent — Somalia transfers pending > 15 minutes (instant corridor SLA)
- *  oneDayLate    — All other countries, pending 24–48 hours
- *  twoDaysLate   — All other countries, pending > 48 hours
+ *  somaliaUrgent - Somalia transfers pending > 15 minutes (instant corridor SLA)
+ *  oneDayLate    - All other countries, pending 24–48 hours
+ *  twoDaysLate   - All other countries, pending > 48 hours
  *
  * "Pending" = status NOT IN ('Completed', 'Deposited')
  *
@@ -70,7 +70,7 @@ export async function GET(req: NextRequest) {
       [oneDayLate],
       [twoDaysLate],
     ] = await Promise.all([
-      // Somalia — instant corridor; breach at 15 minutes
+      // Somalia - instant corridor; breach at 15 minutes
       pool.execute<LateTransfer[]>(
         `${SELECT}
          WHERE t.destination_country = 'Somalia'
@@ -81,7 +81,7 @@ export async function GET(req: NextRequest) {
          ORDER BY t.created_at ASC`,
         cParams
       ),
-      // Standard — 1 day late (24-48 h window)
+      // Standard - 1 day late (24-48 h window)
       pool.execute<LateTransfer[]>(
         `${SELECT}
          WHERE t.destination_country != 'Somalia'
@@ -93,7 +93,7 @@ export async function GET(req: NextRequest) {
          ORDER BY t.created_at ASC`,
         cParams
       ),
-      // Standard — 2+ days late (> 48 h)
+      // Standard - 2+ days late (> 48 h)
       pool.execute<LateTransfer[]>(
         `${SELECT}
          WHERE t.destination_country != 'Somalia'

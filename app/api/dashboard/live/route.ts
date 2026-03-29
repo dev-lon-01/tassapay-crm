@@ -64,9 +64,9 @@ export async function GET(req: NextRequest) {
           ${tAnd}
       `, tParams);
 
-      // Last transfer ingested (no fence — global freshness indicator)
+      // Last transfer ingested (no fence - global freshness indicator)
       const [[{ lastIngestedAt }]] = await conn.query<RowDataPacket[]>(`
-        SELECT MAX(created_at) AS lastIngestedAt
+        SELECT MAX(synced_at) AS lastIngestedAt
         FROM   transfers
       `);
 

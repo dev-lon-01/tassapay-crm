@@ -7,9 +7,9 @@ interface ModalProps {
   /** Text or JSX shown in the fixed header */
   title: ReactNode;
   onClose: () => void;
-  /** Sticky footer — put Save / Cancel buttons here */
+  /** Sticky footer - put Save / Cancel buttons here */
   footer: ReactNode;
-  /** Scrollable body — put form fields here */
+  /** Scrollable body - put form fields here */
   children: ReactNode;
   maxWidth?: string;
 }
@@ -36,7 +36,7 @@ export function Modal({ title, onClose, footer, children, maxWidth = "max-w-lg" 
         className={`flex w-full ${maxWidth} flex-col rounded-2xl bg-white shadow-2xl`}
         style={{ maxHeight: "90vh" }}
       >
-        {/* Header — never scrolls */}
+        {/* Header - never scrolls */}
         <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-6 py-4">
           <div className="text-base font-semibold text-slate-900">{title}</div>
           <button
@@ -48,12 +48,12 @@ export function Modal({ title, onClose, footer, children, maxWidth = "max-w-lg" 
           </button>
         </div>
 
-        {/* Body — scrolls */}
+        {/* Body - scrolls */}
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
           {children}
         </div>
 
-        {/* Footer — sticky, never scrolls */}
+        {/* Footer - sticky, never scrolls */}
         <div className="shrink-0 border-t border-slate-100 bg-white px-6 pb-5 pt-4">
           {footer}
         </div>

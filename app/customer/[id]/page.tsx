@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
@@ -33,6 +33,7 @@ import { apiFetch } from "@/src/lib/apiFetch";
 import { useQueue, type TaskStatus } from "@/src/context/QueueContext";
 import { useTwilioVoice } from "@/src/context/TwilioVoiceContext";
 import { useDropdowns } from "@/src/context/DropdownsContext";
+import { LogCallModal } from "@/src/components/LogCallModal";
 
 interface ApiCustomer {
   customer_id: string;
@@ -111,7 +112,7 @@ function formatDuration(seconds: number | null): string {
 }
 
 function formatDate(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   return new Date(iso).toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "short",
@@ -131,7 +132,7 @@ function createRequestId(): string {
   });
 }
 
-const FOCUS_PLACEHOLDER = "Select outcome…";
+const FOCUS_PLACEHOLDER = "Select outcome...";
 
 function outcomeToStatus(outcome: string): TaskStatus {
   return outcome === "Not Interested" || outcome === "Wrong Number"
@@ -139,7 +140,7 @@ function outcomeToStatus(outcome: string): TaskStatus {
     : "follow-up";
 }
 
-const NOTE_PLACEHOLDER = "Select outcome…";
+const NOTE_PLACEHOLDER = "Select outcome...";
 
 const LOGGER_TABS = [
   { key: "SMS" as const, label: "Send SMS", icon: MessageSquare },
@@ -209,10 +210,12 @@ export default function CustomerProfilePage({
   const [emailSubject, setEmailSubject] = useState("");
   const [emailBody, setEmailBody] = useState("");
   const [noteOutcome, setNoteOutcome] = useState(NOTE_PLACEHOLDER);
+  const [noteText, setNoteText] = useState("");
   const [sending, setSending] = useState(false);
   const [focusOutcome, setFocusOutcome] = useState<string>(FOCUS_PLACEHOLDER);
   const [focusNote, setFocusNote] = useState("");
   const [focusSending, setFocusSending] = useState(false);
+  const [logCallOpen, setLogCallOpen] = useState(false);
 
   const [templates, setTemplates] = useState<ApiTemplate[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState("");
@@ -222,7 +225,7 @@ export default function CustomerProfilePage({
 
   const [toast, setToast] = useState<{
     message: string;
-    type: "success" | "error";
+    type: "success" | "error" | "warning";
   } | null>(null);
 
   const [transfers, setTransfers] = useState<ApiTransfer[]>([]);
@@ -330,6 +333,10 @@ export default function CustomerProfilePage({
         });
         if (!res.ok) {
           const err = await res.json();
+          if (res.status === 429) {
+            setToast({ message: err.error ?? "Please wait before sending another message.", type: "warning" });
+            return;
+          }
           throw new Error(err.error ?? "Failed to send SMS");
         }
         const interaction: ApiInteraction = await res.json();
@@ -359,6 +366,10 @@ export default function CustomerProfilePage({
         });
         if (!res.ok) {
           const err = await res.json();
+          if (res.status === 429) {
+            setToast({ message: err.error ?? "Please wait before sending another message.", type: "warning" });
+            return;
+          }
           throw new Error(err.error ?? "Failed to send email");
         }
         const interaction: ApiInteraction = await res.json();
@@ -377,13 +388,14 @@ export default function CustomerProfilePage({
             customerId: params.id,
             type: "Note",
             outcome: noteOutcome,
-            note: noteOutcome,
+            note: noteText.trim() || noteOutcome,
           }),
         });
         if (res.ok) {
           const interaction: ApiInteraction = await res.json();
           setTimeline((prev) => [interaction, ...prev]);
           setNoteOutcome(NOTE_PLACEHOLDER);
+          setNoteText("");
           setToast({ message: "Note saved!", type: "success" });
         }
       }
@@ -466,7 +478,7 @@ export default function CustomerProfilePage({
     return (
       <div className="flex min-h-[60vh] items-center justify-center gap-2 text-slate-400">
         <Loader2 size={24} className="animate-spin" />
-        <span className="text-sm">Loading profile…</span>
+        <span className="text-sm">Loading profile...</span>
       </div>
     );
   }
@@ -502,11 +514,15 @@ export default function CustomerProfilePage({
           className={`fixed right-4 top-4 z-[100] flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold shadow-xl ${
             toast.type === "success"
               ? "bg-emerald-600 text-white"
-              : "bg-red-600 text-white"
+              : toast.type === "warning"
+                ? "bg-amber-500 text-white"
+                : "bg-red-600 text-white"
           }`}
         >
           {toast.type === "success" ? (
             <CheckCircle size={16} />
+          ) : toast.type === "warning" ? (
+            <Clock size={16} />
           ) : (
             <XCircle size={16} />
           )}
@@ -530,7 +546,7 @@ export default function CustomerProfilePage({
             </div>
             <div>
               <h1 className="text-xl font-bold leading-tight text-slate-900">
-                {customer.full_name ?? "—"}
+                {customer.full_name ?? "-"}
               </h1>
               <button
                 type="button"
@@ -561,14 +577,14 @@ export default function CustomerProfilePage({
             ) : (
               <CheckCircle2 size={11} />
             )}
-            {customer.risk_status ?? "—"} Risk
+            {customer.risk_status ?? "-"} Risk
           </span>
         </div>
 
         <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="flex items-center gap-2.5 text-sm text-slate-600">
             <Mail size={15} className="flex-shrink-0 text-slate-400" />
-            <span className="truncate">{customer.email ?? "—"}</span>
+            <span className="truncate">{customer.email ?? "-"}</span>
           </div>
           <div className="flex items-center gap-2.5 text-sm text-slate-600">
             <Phone size={15} className="flex-shrink-0 text-slate-400" />
@@ -590,12 +606,12 @@ export default function CustomerProfilePage({
                 <Phone size={11} className="opacity-0 transition-opacity group-hover:opacity-100 text-indigo-500" />
               </button>
             ) : (
-              <span>—</span>
+              <span>-</span>
             )}
           </div>
           <div className="flex items-center gap-2.5 text-sm text-slate-600">
             <MapPin size={15} className="flex-shrink-0 text-slate-400" />
-            <span>{customer.country ?? "—"}</span>
+            <span>{customer.country ?? "-"}</span>
           </div>
           <div className="flex items-center gap-2.5 text-sm text-slate-600">
             <Calendar size={15} className="flex-shrink-0 text-slate-400" />
@@ -636,7 +652,7 @@ export default function CustomerProfilePage({
         {transfersLoading ? (
           <div className="flex items-center justify-center gap-2 py-8 text-slate-400">
             <Loader2 size={18} className="animate-spin" />
-            <span className="text-sm">Loading transfers…</span>
+            <span className="text-sm">Loading transfers...</span>
           </div>
         ) : transfers.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-10">
@@ -669,7 +685,7 @@ export default function CustomerProfilePage({
                               month: "short",
                               year: "numeric",
                             })
-                          : "—"}
+                          : "-"}
                       </td>
                       <td className="py-2.5 pr-3">
                         <span className="font-mono text-xs text-slate-600">
@@ -678,23 +694,23 @@ export default function CustomerProfilePage({
                       </td>
                       <td className="py-2.5 pr-3">
                         <span className="font-mono text-xs text-slate-500">
-                          {t.data_field_id ?? "—"}
+                          {t.data_field_id ?? "-"}
                         </span>
                       </td>
                       <td className="whitespace-nowrap py-2.5 pr-3">
                         {t.send_amount != null
                           ? `${t.send_currency ?? ""} ${Number(t.send_amount).toLocaleString("en-GB", { minimumFractionDigits: 2 })}`
-                          : "—"}
+                          : "-"}
                       </td>
                       <td className="whitespace-nowrap py-2.5 pr-3">
                         {t.receive_amount != null
                           ? `${t.receive_currency ?? ""} ${Number(t.receive_amount).toLocaleString("en-GB", { minimumFractionDigits: 2 })}`
-                          : "—"}
+                          : "-"}
                       </td>
                       <td className="max-w-[120px] truncate py-2.5 pr-3">
-                        {t.beneficiary_name ?? "—"}
+                        {t.beneficiary_name ?? "-"}
                       </td>
-                      <td className="py-2.5 pr-3">{t.destination_country ?? "—"}</td>
+                      <td className="py-2.5 pr-3">{t.destination_country ?? "-"}</td>
                       <td className="py-2.5">
                         <span
                           className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -707,7 +723,7 @@ export default function CustomerProfilePage({
                                   : "bg-slate-100 text-slate-500"
                           }`}
                         >
-                          {t.status ?? "—"}
+                          {t.status ?? "-"}
                         </span>
                         {t.hold_reason && (
                           <p
@@ -800,7 +816,7 @@ export default function CustomerProfilePage({
                   onChange={(e) => applyTemplate(e.target.value)}
                   className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-400"
                 >
-                  <option value="">— Select a template —</option>
+                  <option value="">- Select a template -</option>
                   {smsTemplates.map((t) => (
                     <option key={t.id} value={String(t.id)}>
                       {t.name}
@@ -827,7 +843,7 @@ export default function CustomerProfilePage({
                 maxLength={160}
                 value={smsMessage}
                 onChange={(e) => setSmsMessage(e.target.value)}
-                placeholder="Type your SMS message…"
+                placeholder="Type your SMS message..."
                 className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-400"
               />
             </div>
@@ -858,7 +874,7 @@ export default function CustomerProfilePage({
                   onChange={(e) => applyTemplate(e.target.value)}
                   className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-400"
                 >
-                  <option value="">— Select a template —</option>
+                  <option value="">- Select a template -</option>
                   {emailTemplates.map((t) => (
                     <option key={t.id} value={String(t.id)}>
                       {t.name}
@@ -875,7 +891,7 @@ export default function CustomerProfilePage({
                 type="text"
                 value={emailSubject}
                 onChange={(e) => setEmailSubject(e.target.value)}
-                placeholder="Email subject…"
+                placeholder="Email subject..."
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-400"
               />
             </div>
@@ -887,11 +903,11 @@ export default function CustomerProfilePage({
                 rows={5}
                 value={emailBody}
                 onChange={(e) => setEmailBody(e.target.value)}
-                placeholder="Type your email message…"
+                placeholder="Type your email message..."
                 className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-400"
               />
             </div>
-            {/* Beneficiary template extra fields — shown only when template id=6 is active */}
+            {/* Beneficiary template extra fields - shown only when template id=6 is active */}
             {selectedTemplateId === 6 && (
               <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
                 <p className="text-xs font-semibold text-amber-700">
@@ -934,6 +950,18 @@ export default function CustomerProfilePage({
                 ))}
               </select>
             </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">
+                Note <span className="text-slate-400">(optional)</span>
+              </label>
+              <textarea
+                rows={3}
+                value={noteText}
+                onChange={(e) => setNoteText(e.target.value)}
+                placeholder="Add extra details or context..."
+                className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              />
+            </div>
           </div>
         )}
 
@@ -961,7 +989,7 @@ export default function CustomerProfilePage({
                     </span>
                     <span className="text-sm font-semibold text-emerald-800">
                       {callState === "connecting"
-                        ? "Connecting…"
+                        ? "Connecting..."
                         : callState === "active"
                           ? `${String(Math.floor(callDuration / 60)).padStart(2, "0")}:${String(callDuration % 60).padStart(2, "0")}`
                           : "Incoming"}
@@ -986,14 +1014,23 @@ export default function CustomerProfilePage({
                 </div>
               </div>
             ) : (
-              <button
-                onClick={() => makeCall(smsTo.trim(), customer?.full_name ?? undefined, params.id)}
-                disabled={!smsTo.trim() || callState !== "idle"}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold text-white transition-all hover:bg-emerald-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <Phone size={15} />
-                Start Call
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => makeCall(smsTo.trim(), customer?.full_name ?? undefined, params.id)}
+                  disabled={!smsTo.trim() || callState !== "idle"}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold text-white transition-all hover:bg-emerald-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Phone size={15} />
+                  Start Call
+                </button>
+                <button
+                  onClick={() => setLogCallOpen(true)}
+                  className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 active:scale-[0.98]"
+                >
+                  <FileText size={15} />
+                  Log Offline Call
+                </button>
+              </div>
             )}
           </div>
         )}
@@ -1008,7 +1045,7 @@ export default function CustomerProfilePage({
           {sending ? (
             <>
               <Loader2 size={15} className="animate-spin" />
-              {activeTab === "Note" ? "Saving…" : "Sending…"}
+              {activeTab === "Note" ? "Saving..." : "Sending..."}
             </>
           ) : (
             <>
@@ -1057,7 +1094,7 @@ export default function CustomerProfilePage({
                 rows={2}
                 value={focusNote}
                 onChange={(e) => setFocusNote(e.target.value)}
-                placeholder="Add extra context…"
+                placeholder="Add extra context..."
                 className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-emerald-400"
               />
             </div>
@@ -1134,7 +1171,7 @@ export default function CustomerProfilePage({
                       return (
                         <div>
                           <p className="mt-0.5 whitespace-pre-wrap text-sm leading-relaxed text-slate-500">
-                            {isLong && !expanded ? note.slice(0, LIMIT) + "…" : note}
+                            {isLong && !expanded ? note.slice(0, LIMIT) + "..." : note}
                           </p>
                           {isLong && (
                             <button
@@ -1177,6 +1214,20 @@ export default function CustomerProfilePage({
           </ol>
         )}
       </div>
+
+      {logCallOpen && customer && (
+        <LogCallModal
+          customer={{ customer_id: customer.customer_id, full_name: customer.full_name }}
+          onClose={() => {
+            setLogCallOpen(false);
+            // Refresh timeline after logging a call
+            apiFetch(`/api/customers/${params.id}`)
+              .then((r) => r.json())
+              .then((data) => { if (data?.timeline) setTimeline(data.timeline); })
+              .catch(() => {});
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -50,7 +50,7 @@ function daysAgoISO(n: number): string {
 }
 
 function fmtDateTime(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   return new Date(iso).toLocaleString("en-GB", {
     day: "2-digit",
     month: "short",
@@ -62,9 +62,9 @@ function fmtDateTime(iso: string | null): string {
 }
 
 function durationSecs(start: string, end: string | null): string {
-  if (!end) return "—";
+  if (!end) return "-";
   const ms = new Date(end).getTime() - new Date(start).getTime();
-  if (ms < 0) return "—";
+  if (ms < 0) return "-";
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
@@ -162,7 +162,7 @@ function SyncPanel({
         {loading ? (
           <>
             <Loader2 className="h-4 w-4 animate-spin" />
-            Syncing…
+            Syncing...
           </>
         ) : (
           <>
@@ -239,7 +239,7 @@ function TypeBadge({ type }: { type: string | null }) {
         <ArrowRightLeft className="h-3 w-3" /> Transfers
       </span>
     );
-  return <span className="text-xs text-slate-400">{type ?? "—"}</span>;
+  return <span className="text-xs text-slate-400">{type ?? "-"}</span>;
 }
 
 // ─── page ─────────────────────────────────────────────────────────────────────
@@ -321,7 +321,7 @@ export default function SyncPage() {
         {logsLoading && logs.length === 0 ? (
           <div className="flex items-center gap-2 py-8 text-slate-400">
             <Loader2 className="h-4 w-4 animate-spin" />
-            <span className="text-sm">Loading logs…</span>
+            <span className="text-sm">Loading logs...</span>
           </div>
         ) : logs.length === 0 ? (
           <p className="py-6 text-center text-sm text-slate-500">No sync runs recorded yet.</p>
@@ -358,13 +358,13 @@ export default function SyncPage() {
                       {durationSecs(log.started_at, log.finished_at)}
                     </td>
                     <td className="px-4 py-3 text-xs font-medium text-slate-700">
-                      {log.records_fetched?.toLocaleString() ?? "—"}
+                      {log.records_fetched?.toLocaleString() ?? "-"}
                     </td>
                     <td className="px-4 py-3 text-xs font-medium text-emerald-700">
-                      {log.records_inserted?.toLocaleString() ?? "—"}
+                      {log.records_inserted?.toLocaleString() ?? "-"}
                     </td>
                     <td className="px-4 py-3 text-xs font-medium text-blue-700">
-                      {log.records_updated?.toLocaleString() ?? "—"}
+                      {log.records_updated?.toLocaleString() ?? "-"}
                     </td>
                     <td className="max-w-xs truncate py-3 pl-4 pr-5 text-xs text-red-600">
                       {log.error_message ?? ""}

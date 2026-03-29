@@ -5,7 +5,7 @@
  * On a 401 response the stored session is cleared and the user is sent to
  * /login so expired tokens never leave the user stuck.
  *
- * Usage — same signature as fetch():
+ * Usage - same signature as fetch():
  *   const res = await apiFetch("/api/customers");
  *   const res = await apiFetch("/api/communicate/sms", { method: "POST", body: JSON.stringify({...}) });
  */

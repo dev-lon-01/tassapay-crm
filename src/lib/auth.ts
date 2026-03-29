@@ -16,7 +16,7 @@ export interface AuthPayload {
  * Usage inside a route handler:
  *   const auth = requireAuth(req);
  *   if (auth instanceof NextResponse) return auth;   // 401
- *   // auth is AuthPayload — use auth.id, auth.email, etc.
+ *   // auth is AuthPayload - use auth.id, auth.email, etc.
  */
 export function requireAuth(req: NextRequest): AuthPayload | NextResponse {
   const header = req.headers.get("authorization") ?? "";

@@ -215,7 +215,7 @@ function LabelsSelect({
         <input
           id={inputId ?? "labels-input"}
           className="min-w-[80px] flex-1 bg-transparent text-sm outline-none"
-          placeholder={value.length === 0 ? "Add labels…" : ""}
+          placeholder={value.length === 0 ? "Add labels..." : ""}
           value={inputVal}
           onChange={(e) => { setInputVal(e.target.value); setOpen(true); }}
           onFocus={() => setOpen(true)}
@@ -346,7 +346,7 @@ function CreateLeadModal({
               value={form.country}
               onChange={(e) => handleCountryChange(e.target.value)}
             >
-              <option value="">— Select country —</option>
+              <option value="">- Select country -</option>
               {COUNTRIES.map((c) => (
                 <option key={c.name} value={c.name}>{c.name} ({c.dial})</option>
               ))}
@@ -378,7 +378,7 @@ function CreateLeadModal({
               value={form.assigned_agent_id}
               onChange={(e) => setForm({ ...form, assigned_agent_id: e.target.value })}
             >
-              <option value="">— Unassigned —</option>
+              <option value="">- Unassigned -</option>
               {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
           </div>
@@ -500,7 +500,7 @@ function EditLeadModal({
               value={form.country}
               onChange={(e) => handleCountryChange(e.target.value)}
             >
-              <option value="">— Select country —</option>
+              <option value="">- Select country -</option>
               {/* If the lead's current country is not in the EU/UK list, keep it selectable */}
               {form.country && !COUNTRIES.find((c) => c.name === form.country) && (
                 <option value={form.country}>{form.country}</option>
@@ -536,7 +536,7 @@ function EditLeadModal({
               value={form.assigned_agent_id}
               onChange={(e) => setForm({ ...form, assigned_agent_id: e.target.value })}
             >
-              <option value="">— Unassigned —</option>
+              <option value="">- Unassigned -</option>
               {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
           </div>
@@ -609,7 +609,7 @@ function BulkImportModal({ onClose, onImported }: { onClose: () => void; onImpor
 
           const normalised = phone.replace(/[\s\-+]/g, "");
           if (seenPhones.has(normalised)) {
-            errors.push(`Row ${rowNum}: Duplicate phone in this CSV — ${phone}`);
+            errors.push(`Row ${rowNum}: Duplicate phone in this CSV - ${phone}`);
             return;
           }
           seenPhones.add(normalised);
@@ -629,7 +629,7 @@ function BulkImportModal({ onClose, onImported }: { onClose: () => void; onImpor
             const json = await res.json();
             duplicates = json.duplicates ?? [];
           } catch {
-            /* offline or error — proceed anyway, INSERT IGNORE will guard */
+            /* offline or error - proceed anyway, INSERT IGNORE will guard */
           }
         }
 
@@ -803,7 +803,7 @@ function LeadCard({ lead, onClick, onEdit }: { lead: Lead; onClick: () => void; 
     >
       <div className="flex items-start justify-between gap-2">
         <h3 className="text-sm font-semibold text-slate-900 leading-tight">
-          {lead.full_name ?? "—"}
+          {lead.full_name ?? "-"}
         </h3>
         <button
           onClick={(e) => { e.stopPropagation(); onEdit(); }}
@@ -994,7 +994,7 @@ export default function LeadsPage() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search name or phone…"
+              placeholder="Search name or phone..."
               className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-8 pr-3 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
             />
             {search && (
@@ -1124,7 +1124,7 @@ export default function LeadsPage() {
                     className="flex w-full items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-semibold text-slate-500 hover:bg-slate-100 disabled:opacity-50 transition"
                   >
                     {loadingMore ? (
-                      <><Loader2 size={12} className="animate-spin" /> Loading…</>
+                      <><Loader2 size={12} className="animate-spin" /> Loading...</>
                     ) : (
                       <>Load More <span className="text-slate-400">({stageLeads.length} of {total})</span></>
                     )}

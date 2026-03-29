@@ -60,16 +60,19 @@ function buildNote(
   return `Inbound from ${from}${status ? ` - ${status}` : ""}`;
 }
 
-function buildVoicemailResponse(baseUrl: string) {
+function buildVoicemailResponse(baseUrl: string, parentCallSid?: string | null) {
   const twiml = new VoiceResponse();
   twiml.say(
     { voice: "alice" },
     "Sorry we missed your call. Please leave a message after the tone and press hash when done."
   );
+  const qs = parentCallSid
+    ? `?source=recording&flow=inbound&leg=voicemail&parentCallSid=${encodeURIComponent(parentCallSid)}`
+    : `?source=recording&flow=inbound&leg=voicemail`;
   twiml.record({
     maxLength: 120,
     finishOnKey: "#",
-    recordingStatusCallback: `${baseUrl}/api/voice/call-completed?source=recording&flow=inbound&leg=voicemail`,
+    recordingStatusCallback: `${baseUrl}/api/voice/call-completed${qs}`,
     recordingStatusCallbackMethod: "POST",
     transcribe: false,
   });
@@ -109,13 +112,19 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    const queryParentCallSid = req.nextUrl.searchParams.get("parentCallSid") ?? "";
     const lookupSids = [
       canonicalSid,
       params.CallSid ?? "",
       params.ParentCallSid ?? "",
       params.DialCallSid ?? "",
       params.RecordingCallSid ?? "",
+      queryParentCallSid,
     ].filter((value): value is string => Boolean(value));
+
+    // When parentCallSid is explicitly provided in the URL, prefer it as the
+    // canonical SID so the upsert always targets the original parent record.
+    const effectiveCallSid = queryParentCallSid || canonicalSid;
 
     const from = params.From ?? params.Caller ?? "";
     const to = params.To ?? params.Called ?? "";
@@ -159,7 +168,7 @@ export async function POST(req: NextRequest) {
     if (recordingUrl) {
       await upsertCallInteraction({
         lookupSids,
-        twilioCallSid: canonicalSid,
+        twilioCallSid: effectiveCallSid,
         customerId: customerId ?? undefined,
         agentId: agentId ?? undefined,
         direction: flow,
@@ -170,18 +179,18 @@ export async function POST(req: NextRequest) {
       return xmlResponse();
     }
 
-    const isCanceledSiblingLeg =
-      flow === "inbound" &&
-      (leg === "browser" || leg === "sip") &&
-      rawStatus === "canceled";
+    // ALL leg-status events should only merge metadata — not create visible notes
+    // or overwrite final call status.  The dial-action callback provides the
+    // authoritative final outcome for the call.
+    const suppressNote = source === "leg-status";
 
     await upsertCallInteraction({
       lookupSids,
-      twilioCallSid: canonicalSid,
+      twilioCallSid: effectiveCallSid,
       customerId: customerId ?? undefined,
       agentId: agentId ?? undefined,
-      callStatus: isCanceledSiblingLeg ? undefined : (rawStatus || undefined),
-      note: isCanceledSiblingLeg ? undefined : buildNote(flow, rawStatus, from, to, leg, isAction),
+      callStatus: suppressNote ? undefined : (rawStatus || undefined),
+      note: suppressNote ? undefined : buildNote(flow, rawStatus, from, to, leg, isAction),
       direction: flow,
       callDurationSeconds: duration ?? undefined,
       metadata,
@@ -192,7 +201,7 @@ export async function POST(req: NextRequest) {
       isAction &&
       ["busy", "no-answer", "failed", "canceled"].includes(rawStatus)
     ) {
-      return buildVoicemailResponse(baseUrl);
+      return buildVoicemailResponse(baseUrl, effectiveCallSid);
     }
 
     return xmlResponse();

@@ -28,6 +28,9 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const regionParam = searchParams.get("region");
   const typeParam   = searchParams.get("type");   // e.g. "Call", "SMS", "Note"
+  const agentIdParam = searchParams.get("agentId");
+  const fromParam    = searchParams.get("from"); // ISO date string e.g. "2026-03-01"
+  const toParam      = searchParams.get("to");   // ISO date string e.g. "2026-03-25"
   const limit  = Math.min(200, Math.max(1, Number(searchParams.get("limit") ?? 50)));
   const page   = Math.max(1, Number(searchParams.get("page") ?? 1));
   const offset = (page - 1) * limit;
@@ -57,6 +60,15 @@ export async function GET(req: NextRequest) {
     const typeClause  = typeParam ? "AND i.type = ?" : "";
     const typeParams  = typeParam ? [typeParam] : [];
 
+    const agentClause = agentIdParam ? "AND i.agent_id = ?" : "";
+    const agentParams = agentIdParam ? [agentIdParam] : [];
+
+    const fromClause = fromParam ? "AND i.created_at >= ?" : "";
+    const fromParams = fromParam ? [fromParam] : [];
+
+    const toClause = toParam ? "AND i.created_at <= ?" : "";
+    const toParams = toParam ? [`${toParam} 23:59:59`] : [];
+
     const [rows] = await pool.execute<RowDataPacket[]>(
       `SELECT
          i.id,
@@ -68,8 +80,10 @@ export async function GET(req: NextRequest) {
          i.direction,
          i.metadata,
          i.customer_id,
+         i.recording_url,
          c.phone_number,
          u.name      AS agent_name,
+         u.id        AS agent_id,
          c.full_name AS customer_name,
          c.country   AS customer_country
        FROM   interactions i
@@ -78,9 +92,12 @@ export async function GET(req: NextRequest) {
        WHERE  (i.agent_id IS NOT NULL OR (i.type = 'SMS' AND i.direction = 'inbound'))
          ${fenceClause}
          ${typeClause}
+         ${agentClause}
+         ${fromClause}
+         ${toClause}
        ORDER BY i.created_at DESC
        LIMIT ${limit} OFFSET ${offset}`,
-      [...fenceParams, ...typeParams],
+      [...fenceParams, ...typeParams, ...agentParams, ...fromParams, ...toParams],
     );
 
     return NextResponse.json(rows);

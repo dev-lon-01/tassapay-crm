@@ -57,7 +57,7 @@ function rangeForPreset(preset: Preset): { startDate: string; endDate: string } 
     return { startDate: isoDate(start), endDate: today };
   }
 
-  // "month" — current calendar month
+  // "month" - current calendar month
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
   return { startDate: isoDate(start), endDate: today };
 }
@@ -85,7 +85,7 @@ function MetricCard({ label, value, loading, icon, colorClass, textClass }: Metr
           <div className="mt-1 h-7 w-16 animate-pulse rounded bg-slate-100" />
         ) : (
           <p className={`text-2xl font-bold tabular-nums ${textClass}`}>
-            {value?.toLocaleString() ?? "—"}
+            {value?.toLocaleString() ?? "-"}
           </p>
         )}
       </div>
@@ -254,7 +254,7 @@ function AnalyticsDashboard() {
       {loadingAgents ? (
         <div className="flex items-center justify-center gap-2 py-20 text-slate-400">
           <Loader2 className="h-5 w-5 animate-spin" />
-          <span className="text-sm">Loading agent data…</span>
+          <span className="text-sm">Loading agent data...</span>
         </div>
       ) : agents.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white py-16 text-center text-sm text-slate-400">

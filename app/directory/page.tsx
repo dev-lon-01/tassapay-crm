@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -118,7 +118,7 @@ function flagFor(country: string | null): string {
 }
 
 function formatPhone(phone: string | null, country: string | null): string {
-  if (!phone) return "—";
+  if (!phone) return "-";
   const t = phone.trim();
   if (t.startsWith("+")) return t;
   const code = DIAL_CODES[country ?? ""];
@@ -128,7 +128,7 @@ function formatPhone(phone: string | null, country: string | null): string {
 }
 
 function formatDate(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   return new Date(iso).toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "short",
@@ -161,7 +161,7 @@ function RiskBadge({ status }: { status: string | null }) {
     </span>
   ) : (
     <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
-      {status ?? "—"}
+      {status ?? "-"}
     </span>
   );
 }
@@ -183,7 +183,7 @@ function FilterBar({ filters, onChange, countries }: FilterBarProps) {
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         <input
           type="text"
-          placeholder="Search by name or ID…"
+          placeholder="Search by name, email, phone or ID..."
           value={filters.search}
           onChange={(e) => onChange("search", e.target.value)}
           className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-4 text-sm text-slate-700 shadow-sm placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
@@ -193,7 +193,7 @@ function FilterBar({ filters, onChange, countries }: FilterBarProps) {
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         <input
           type="text"
-          placeholder="Search by transfer reference (txn… / efu…)…"
+          placeholder="Search by transfer reference (txn... / efu...)..."
           value={filters.refSearch}
           onChange={(e) => onChange("refSearch", e.target.value)}
           className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-4 text-sm text-slate-700 shadow-sm placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
@@ -250,13 +250,13 @@ function Pagination({ page, pages, total, limit, onPage }: PaginationProps) {
   const from = total === 0 ? 0 : (page - 1) * limit + 1;
   const to = Math.min(page * limit, total);
 
-  const nums: (number | "…")[] = [];
+  const nums: (number | "...")[] = [];
   const delta = 2;
   for (let i = 1; i <= pages; i++) {
     if (i === 1 || i === pages || (i >= page - delta && i <= page + delta)) {
       nums.push(i);
-    } else if (nums[nums.length - 1] !== "…") {
-      nums.push("…");
+    } else if (nums[nums.length - 1] !== "...") {
+      nums.push("...");
     }
   }
 
@@ -277,9 +277,9 @@ function Pagination({ page, pages, total, limit, onPage }: PaginationProps) {
           <ChevronLeft className="h-4 w-4" />
         </button>
         {nums.map((n, i) =>
-          n === "…" ? (
+          n === "..." ? (
             <span key={`e${i}`} className="px-1 text-xs text-slate-400">
-              …
+              ...
             </span>
           ) : (
             <button
@@ -323,10 +323,10 @@ function CustomerCard({ customer }: { customer: ApiCustomer }) {
           <span className="text-3xl leading-none">{flagFor(customer.country)}</span>
           <div>
             <p className="text-sm font-semibold text-slate-900">
-              {customer.full_name ?? "—"}
+              {customer.full_name ?? "-"}
             </p>
             <p className="text-xs text-slate-500">
-              #{customer.customer_id} · {customer.country ?? "—"}
+              #{customer.customer_id} · {customer.country ?? "-"}
             </p>
           </div>
         </div>
@@ -368,11 +368,11 @@ function CustomerRow({ customer }: { customer: ApiCustomer }) {
         <div className="flex items-center gap-2">
           <span className="text-xl leading-none">{flagFor(customer.country)}</span>
           <span className="text-sm font-semibold text-slate-800">
-            {customer.full_name ?? "—"}
+            {customer.full_name ?? "-"}
           </span>
         </div>
       </td>
-      <td className="px-3 py-3 text-sm text-slate-600">{customer.country ?? "—"}</td>
+      <td className="px-3 py-3 text-sm text-slate-600">{customer.country ?? "-"}</td>
       <td className="whitespace-nowrap px-3 py-3 font-mono text-xs text-slate-600">
         {phone}
       </td>
@@ -490,7 +490,7 @@ export default function DirectoryPage() {
           Customer Directory
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          {loading ? "Loading…" : `${total.toLocaleString()} customer${total === 1 ? "" : "s"}`}
+          {loading ? "Loading..." : `${total.toLocaleString()} customer${total === 1 ? "" : "s"}`}
         </p>
       </div>
 
@@ -499,7 +499,7 @@ export default function DirectoryPage() {
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-16 text-slate-400">
           <Loader2 className="h-5 w-5 animate-spin" />
-          <span className="text-sm">Loading customers…</span>
+          <span className="text-sm">Loading customers...</span>
         </div>
       ) : customers.length === 0 ? (
         <EmptyState />

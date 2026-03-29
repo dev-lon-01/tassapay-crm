@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const daysParam = Number(searchParams.get("days") ?? "3");
-  const days = VALID_DAYS.has(daysParam) ? daysParam : 3;
+  const days = VALID_DAYS.has(daysParam) ? daysParam : 1;
 
   try {
     const conn = await pool.getConnection();
@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
       const tAnd    = tFence ? ` AND ${tFence.sql}` : "";
       const tParams = tFence?.params ?? [];
 
-      // Metric 1: Processed but Not Paid — grouped by destination country
+      // Metric 1: Processed but Not Paid - grouped by destination country
       const [processedRows] = await conn.query<RowDataPacket[]>(
         `SELECT destination_country, COUNT(*) AS count
          FROM   transfers
@@ -56,6 +56,7 @@ export async function GET(req: NextRequest) {
         `SELECT COUNT(*) AS count
          FROM   transfers
          WHERE  payment_status = 'Received'
+           AND  status NOT IN ('Completed', 'Deposited', 'Cancel')
            AND  created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
            ${tAnd}`,
         [days, ...tParams],

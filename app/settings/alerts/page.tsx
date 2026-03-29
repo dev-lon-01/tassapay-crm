@@ -254,7 +254,7 @@ function RuleModal({ rule, onClose, onSaved }: ModalProps) {
             <option value={-1}>Low (-1)</option>
             <option value={0}>Normal (0)</option>
             <option value={1}>High (1)</option>
-            <option value={2}>Emergency (2) — bypasses silent mode</option>
+            <option value={2}>Emergency (2) - bypasses silent mode</option>
           </select>
         </div>
         )}
@@ -400,7 +400,7 @@ export default function AlertSettingsPage() {
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500">
             <Loader2 className="h-5 w-5 animate-spin text-emerald-600" />
-            Loading rules…
+            Loading rules...
           </div>
         ) : rules.length === 0 ? (
           <div className="py-16 text-center">
@@ -434,14 +434,14 @@ export default function AlertSettingsPage() {
                     {rule.alert_emails ? (
                       <span title={rule.alert_emails}>{rule.alert_emails}</span>
                     ) : (
-                      <span className="text-slate-300">—</span>
+                      <span className="text-slate-300">-</span>
                     )}
                   </td>
                   <td className="px-5 py-3.5 text-slate-600 max-w-xs truncate">
                     {rule.alert_phones ? (
                       <span title={rule.alert_phones}>{rule.alert_phones}</span>
                     ) : (
-                      <span className="text-slate-300">—</span>
+                      <span className="text-slate-300">-</span>
                     )}
                   </td>
                   <td className="px-5 py-3.5">

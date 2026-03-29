@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "next-env.d.ts",
+    "app/api/dashboard/stats/route.ts",
+    "app/dashboard/page.tsx"
+  ],
+  "exclude": ["node_modules"]
+}

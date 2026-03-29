@@ -58,7 +58,7 @@ export function DropdownsProvider({ children }: { children: ReactNode }) {
       .then((data: DropdownRow[]) => {
         if (Array.isArray(data)) setRows(data);
       })
-      .catch(() => {/* silently degrade — hardcoded fallbacks via empty arrays */})
+      .catch(() => {/* silently degrade - hardcoded fallbacks via empty arrays */})
       .finally(() => {
         setLoading(false);
         setFetched(true);

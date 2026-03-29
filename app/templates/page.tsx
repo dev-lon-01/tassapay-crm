@@ -104,7 +104,7 @@ function TemplateModal({
             ) : (
               <Save size={14} />
             )}
-            {saving ? "Saving…" : "Save Template"}
+            {saving ? "Saving..." : "Save Template"}
           </button>
         </div>
       }
@@ -150,7 +150,7 @@ function TemplateModal({
               type="text"
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
-              placeholder="Email subject line…"
+              placeholder="Email subject line..."
               className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-400"
             />
           </div>
@@ -166,7 +166,7 @@ function TemplateModal({
             value={body}
             onChange={(e) => setBody(e.target.value)}
             required
-            placeholder="Message body…"
+            placeholder="Message body..."
             className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-400"
           />
           <p className="mt-1.5 text-xs text-slate-400">
@@ -306,7 +306,7 @@ export default function TemplatesPage() {
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-20 text-slate-400">
           <Loader2 size={22} className="animate-spin" />
-          <span className="text-sm">Loading templates…</span>
+          <span className="text-sm">Loading templates...</span>
         </div>
       ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-4 rounded-2xl border-2 border-dashed border-slate-200 py-20">

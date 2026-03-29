@@ -59,7 +59,7 @@ function daysLate(created_at: string): string {
 }
 
 function fmtAmount(amount: number | null, currency: string | null): string {
-  if (amount === null) return "—";
+  if (amount === null) return "-";
   return `${currency ?? ""} ${Number(amount).toLocaleString("en-GB", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -173,17 +173,17 @@ function SomaliaTable({
                     {t.transaction_ref}
                   </td>
                   <td className="px-4 py-3 text-sm font-medium text-slate-800">
-                    {t.full_name ?? "—"}
+                    {t.full_name ?? "-"}
                   </td>
                   <td className="px-4 py-3 text-sm text-slate-600">
-                    {t.sender_country ?? "—"}
+                    {t.sender_country ?? "-"}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-slate-800">
                     {fmtAmount(t.send_amount, t.send_currency)}
                   </td>
                   <td className="px-4 py-3">
                     <span className="inline-block rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
-                      {t.status ?? "—"}
+                      {t.status ?? "-"}
                     </span>
                   </td>
                   <td className="py-3 pl-4 pr-5">
@@ -311,13 +311,13 @@ function StandardTable({
                     {t.transaction_ref}
                   </td>
                   <td className="px-4 py-3 text-sm text-slate-700">
-                    {t.destination_country ?? "—"}
+                    {t.destination_country ?? "-"}
                   </td>
                   <td className="px-4 py-3 text-sm font-medium text-slate-800">
-                    {t.full_name ?? "—"}
+                    {t.full_name ?? "-"}
                   </td>
                   <td className="px-4 py-3 text-sm text-slate-600">
-                    {t.sender_country ?? "—"}
+                    {t.sender_country ?? "-"}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-slate-800">
                     {fmtAmount(t.send_amount, t.send_currency)}
@@ -326,7 +326,7 @@ function StandardTable({
                     <span
                       className={`inline-block rounded-full ${colors.statusBadgeBg} ${colors.statusBadgeText} px-2 py-0.5 text-xs font-semibold`}
                     >
-                      {t.status ?? "—"}
+                      {t.status ?? "-"}
                     </span>
                   </td>
                   <td className="py-3 pl-4 pr-5">
@@ -392,11 +392,11 @@ export default function QATransfersPage() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-            QA — Transfer Monitor
+            QA - Transfer Monitor
           </h1>
           <p className="mt-0.5 text-sm text-slate-500">
             {loading && !data
-              ? "Loading…"
+              ? "Loading..."
               : `${total} late transfer${total === 1 ? "" : "s"} detected · refreshes every 60 s`}
             {lastUpdated && (
               <span className="ml-2 text-slate-400">
@@ -431,7 +431,7 @@ export default function QATransfersPage() {
       {loading && !data && (
         <div className="flex items-center justify-center gap-2 py-16 text-slate-400">
           <Loader2 className="h-5 w-5 animate-spin" />
-          <span className="text-sm">Loading transfer data…</span>
+          <span className="text-sm">Loading transfer data...</span>
         </div>
       )}
 

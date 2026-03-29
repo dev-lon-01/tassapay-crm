@@ -6,7 +6,7 @@ import type { ResultSetHeader } from "mysql2";
 
 /**
  * PATCH /api/users/[id]/password
- * Admin only — reset a user's password
+ * Admin only - reset a user's password
  * Body: { newPassword }
  */
 export async function PATCH(

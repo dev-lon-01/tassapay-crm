@@ -8,7 +8,7 @@ import type { RowDataPacket } from "mysql2";
  * GET /api/tasks
  *
  * Query params (all optional):
- *   ?queueType=  default | dormant | new | incomplete  (default: "default")
+ *   ?queueType=  default | dormant | new | incomplete | portfolio | hot-leads
  *   ?timeframe=  number of days for dormant/new modes
  *   ?search=     full-text filter on name, phone, id
  *   ?country=    exact country match
@@ -27,9 +27,17 @@ export async function GET(req: NextRequest) {
     const page       = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10));
     const offset     = (page - 1) * PAGE_SIZE;
     const rawSort    = searchParams.get("sort")?.toUpperCase();
-    const sortDir    = rawSort === "ASC" ? "ASC" : "DESC"; // whitelist — default DESC
+    const sortDir    = rawSort === "ASC" ? "ASC" : "DESC"; // whitelist - default DESC
 
     const params: (string | number)[] = [];
+    let orderBySql = `
+        CASE
+          WHEN c.kyc_completion_date IS NULL THEN 0
+          WHEN c.total_transfers = 0         THEN 1
+          ELSE                                    2
+        END ASC,
+        c.registration_date ${sortDir}
+    `;
 
     // ── queue-type WHERE clause
     let baseWhere: string;
@@ -37,7 +45,7 @@ export async function GET(req: NextRequest) {
     switch (queueType) {
       case "dormant": {
         const days = timeframe > 0 ? timeframe : 40;
-        // Use the actual transfers table — the denormalized total_transfers column
+        // Use the actual transfers table - the denormalized total_transfers column
         // is never updated by the sync job so it is always 0 and cannot be trusted.
         baseWhere = `c.customer_id IN (
           SELECT customer_id
@@ -52,10 +60,30 @@ export async function GET(req: NextRequest) {
         const days = timeframe > 0 ? timeframe : 7;
         baseWhere = `c.registration_date >= DATE_SUB(NOW(), INTERVAL ? DAY)`;
         params.push(days);
+        orderBySql = `c.registration_date ${sortDir}`;
         break;
       }
       case "incomplete":
         baseWhere = `c.kyc_completion_date IS NULL`;
+        break;
+      case "portfolio":
+        baseWhere = `(c.assigned_agent_id = ? OR c.assigned_user_id = ?)`;
+        params.push(auth.id, auth.id);
+        orderBySql = `c.registration_date ${sortDir}`;
+        break;
+      case "hot-leads":
+        baseWhere = `(
+          c.kyc_completion_date IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM transfers t
+            WHERE  t.customer_id = c.customer_id
+            AND    t.status != 'Failed'
+          )
+          AND (c.assigned_agent_id = ? OR c.assigned_user_id = ?
+               OR (c.assigned_agent_id IS NULL AND c.assigned_user_id IS NULL))
+        )`;
+        params.push(auth.id, auth.id);
+        orderBySql = `c.registration_date ${sortDir}`;
         break;
       default:
         baseWhere = `(
@@ -107,16 +135,15 @@ export async function GET(req: NextRequest) {
           SELECT MAX(t.created_at)
           FROM   transfers t
           WHERE  t.customer_id = c.customer_id
-        ) AS last_transfer_date
+        ) AS last_transfer_date,
+        (
+          SELECT MAX(i.created_at)
+          FROM   interactions i
+          WHERE  i.customer_id = c.customer_id
+        ) AS last_interaction_date
       FROM customers c
       WHERE ${baseWhere}${extraWhere}
-      ORDER BY
-        CASE
-          WHEN c.kyc_completion_date IS NULL THEN 0
-          WHEN c.total_transfers = 0         THEN 1
-          ELSE                                    2
-        END ASC,
-        c.registration_date ${sortDir}
+      ORDER BY ${orderBySql}
       LIMIT ${PAGE_SIZE} OFFSET ${offset}
     `;
 

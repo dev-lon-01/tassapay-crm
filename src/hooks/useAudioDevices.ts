@@ -28,7 +28,7 @@ export function useAudioDevices() {
 
   const enumerate = useCallback(async () => {
     if (typeof navigator === "undefined" || !navigator.mediaDevices?.enumerateDevices) return;
-    // setSinkId is unsupported on iOS/Safari — skip output enumeration entirely
+    // setSinkId is unsupported on iOS/Safari - skip output enumeration entirely
     const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
     const isIOS = /iPad|iPhone|iPod/.test(ua) ||
       (ua.includes("Mac") && "ontouchend" in document);
@@ -36,7 +36,7 @@ export function useAudioDevices() {
       const devices = await navigator.mediaDevices.enumerateDevices();
       setAudioOutputs(
         isIOS
-          ? []   // hide output selector on iOS — setSinkId throws
+          ? []   // hide output selector on iOS - setSinkId throws
           : devices
               .filter((d) => d.kind === "audiooutput")
               .map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Speaker ${i + 1}` }))
@@ -47,7 +47,7 @@ export function useAudioDevices() {
           .map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Microphone ${i + 1}` }))
       );
     } catch {
-      // enumerateDevices not supported — silently ignore
+      // enumerateDevices not supported - silently ignore
     }
   }, []);
 

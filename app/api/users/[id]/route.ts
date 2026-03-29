@@ -6,7 +6,7 @@ import type { RowDataPacket, ResultSetHeader } from "mysql2";
 
 /**
  * PUT /api/users/[id]
- * Admin only — update name, email, role, is_active
+ * Admin only - update name, email, role, is_active
  * Body: { name, email, role, is_active }
  */
 export async function PUT(

@@ -9,7 +9,10 @@
     "lint": "eslint",
     "sla:worker": "node scripts/sla-alert-worker.mjs",
     "sync:worker": "node scripts/sync-worker.mjs",
+    "payments:worker": "node scripts/payment-worker.js",
     "db:setup": "node scripts/create-tables.mjs",
+    "db:migrate:payments": "node scripts/migrate-payments.mjs",
+    "db:migrate:reconciliation": "node scripts/migrate-reconciliation.mjs",
     "db:sync": "node scripts/sync-customers.mjs",
     "api:test": "node scripts/test-api.mjs"
   },
@@ -46,6 +49,7 @@
     "node-fetch": "^2.7.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
-    "typescript": "^5"
+    "typescript": "^5",
+    "xlsx": "^0.18.5"
   }
 }

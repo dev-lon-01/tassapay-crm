@@ -266,6 +266,10 @@ CREATE TABLE IF NOT EXISTS `transfers` (
   `payment_status`      VARCHAR(50)    DEFAULT NULL,             -- paymentReceived_Name from backoffice (e.g. 'Received')
   `tayo_date_paid`      DATETIME       DEFAULT NULL,             -- Datepaid from Tayo API (funds released timestamp)
   `sla_alert_sent_at`   DATETIME       DEFAULT NULL,             -- set when SLA breach alert is fired (spam lock)
+  `primary_payment_id`  INT            DEFAULT NULL,             -- FK → payments.id (matched gateway row)
+  `reconciliation_status` ENUM('pending','matched','mismatch','manual_adjustment') DEFAULT 'pending',
+  `accounting_category` ENUM('remittance','operational_expense','rounding_difference','suspense') DEFAULT NULL,
+  `manual_adjustment_note` TEXT         DEFAULT NULL,
   `synced_at`           DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
   PRIMARY KEY (`id`),
@@ -274,9 +278,42 @@ CREATE TABLE IF NOT EXISTS `transfers` (
   INDEX `idx_transfers_status`        (`status`),
   INDEX `idx_transfers_date`          (`created_at`),
   INDEX `idx_transfers_data_field_id` (`data_field_id`),
+  INDEX `idx_transfers_recon_status`  (`reconciliation_status`),
   CONSTRAINT `fk_transfers_attributed_agent`
     FOREIGN KEY (`attributed_agent_id`) REFERENCES `users` (`id`)
-    ON DELETE SET NULL ON UPDATE CASCADE
+    ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_primary_payment`
+    FOREIGN KEY (`primary_payment_id`) REFERENCES `payments` (`id`)
+    ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- â”€â”€â”€ payments (gateway reconciliation imports) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+CREATE TABLE IF NOT EXISTS `payments` (
+  `id`                  INT            NOT NULL AUTO_INCREMENT,
+  `provider`            VARCHAR(50)    NOT NULL,                 -- volume | emerchantpay | paycross
+  `provider_payment_id` VARCHAR(191)   NOT NULL,                 -- unique gateway-side transaction / refund id
+  `transfer_ref`        VARCHAR(50)    DEFAULT NULL,             -- matches transfers.transaction_ref where possible
+  `payment_type`        VARCHAR(50)    NOT NULL DEFAULT 'payment', -- payment | refund
+  `payment_method`      VARCHAR(100)   DEFAULT NULL,             -- card, bank transfer, wallet, etc.
+  `amount`              DECIMAL(12,2)  DEFAULT NULL,
+  `currency`            VARCHAR(10)    DEFAULT NULL,
+  `status`              VARCHAR(20)    NOT NULL,                 -- success | failed | refunded
+  `provider_status`     VARCHAR(100)   DEFAULT NULL,             -- raw provider-native status
+  `payment_date`        DATETIME       DEFAULT NULL,
+  `raw_data`            JSON           DEFAULT NULL,
+  `is_reconciled`       BOOLEAN        DEFAULT FALSE,
+  `reconciliation_note` VARCHAR(255)   DEFAULT NULL,             -- e.g. 'Orphan: Transfer ID not found' | 'Amount Mismatch'
+  `created_at`          DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`          DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_provider_payment_id` (`provider_payment_id`),
+  INDEX `idx_payments_transfer_ref` (`transfer_ref`),
+  INDEX `idx_payments_provider` (`provider`),
+  INDEX `idx_payments_payment_date` (`payment_date`),
+  INDEX `idx_payments_status` (`status`),
+  INDEX `idx_payments_reconciled` (`is_reconciled`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Sync run log: records each pull from the TassaPay API
@@ -292,7 +329,45 @@ CREATE TABLE IF NOT EXISTS `sync_log` (
   `error_message` TEXT          DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- â"€â"€â"€ commissions (agent commission tracking with maker-checker workflow) â"€â"€â"€â"€â"€â"€
 
+CREATE TABLE IF NOT EXISTS `commissions` (
+  `id`                  INT            NOT NULL AUTO_INCREMENT,
+  `agent_id`            INT            NOT NULL,                   -- FK â†' users.id
+  `customer_id`         VARCHAR(50)    NOT NULL,                   -- FK â†' customers.customer_id
+  `transfer_id`         INT            NOT NULL,                   -- FK â†' transfers.id (the first non-Failed transfer)
+  `commission_amount`   DECIMAL(10,2)  NOT NULL,                   -- calculated payout amount
+  `currency`            VARCHAR(10)    NOT NULL DEFAULT 'GBP',
+  `status`              ENUM('pending_approval','approved','rejected','paid','cancelled')
+                                       NOT NULL DEFAULT 'pending_approval',
+  `approved_by`         INT            DEFAULT NULL,               -- FK â†' users.id (Admin who approved)
+  `approved_at`         DATETIME       DEFAULT NULL,
+  `paid_by`             INT            DEFAULT NULL,               -- FK â†' users.id (Finance user who marked paid)
+  `paid_at`             DATETIME       DEFAULT NULL,
+  `rejection_reason`    VARCHAR(500)   DEFAULT NULL,
+  `cancellation_reason` VARCHAR(500)   DEFAULT NULL,
+  `cancelled_at`        DATETIME       DEFAULT NULL,
+  `created_at`          DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_commission_transfer` (`transfer_id`),            -- one commission per transfer (idempotency gate)
+  INDEX `idx_commissions_agent`    (`agent_id`),
+  INDEX `idx_commissions_status`   (`status`),
+  INDEX `idx_commissions_customer` (`customer_id`),
+
+  CONSTRAINT `fk_commissions_agent`
+    FOREIGN KEY (`agent_id`) REFERENCES `users` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_commissions_transfer`
+    FOREIGN KEY (`transfer_id`) REFERENCES `transfers` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_commissions_approved_by`
+    FOREIGN KEY (`approved_by`) REFERENCES `users` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_commissions_paid_by`
+    FOREIGN KEY (`paid_by`) REFERENCES `users` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 -- â”€â”€â”€ Migrations (run once on existing installs) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 -- New installs from this schema get the columns automatically via the CREATE TABLE
 -- statements above. For existing databases, run the two ALTERs below once:
@@ -353,5 +428,34 @@ CREATE TABLE IF NOT EXISTS `system_dropdowns` (
   UNIQUE KEY `uq_dropdown` (`category`, `label`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- --- automation_rules (configurable nudge / workflow rules) -------------------
 
+CREATE TABLE IF NOT EXISTS `automation_rules` (
+  `id`                INT           NOT NULL AUTO_INCREMENT,
+  `rule_name`         VARCHAR(255)  NOT NULL,
+  `trigger_key`       VARCHAR(100)  NOT NULL UNIQUE,
+  `delay_hours`       INT           NOT NULL,
+  `is_active`         BOOLEAN       DEFAULT FALSE,
+  `email_subject`     VARCHAR(255)  NOT NULL,
+  `email_template_id` VARCHAR(100)  NOT NULL,
+  `updated_at`        TIMESTAMP     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+INSERT IGNORE INTO `automation_rules`
+  (`rule_name`, `trigger_key`, `delay_hours`, `is_active`, `email_subject`, `email_template_id`)
+VALUES
+  ('72-Hour First Transfer Nudge', 'NUDGE_FIRST_TRANSFER', 72, FALSE,
+   'Your first transfer is free!', 'first-transfer-nudge');
+
+-- --- communications_log (prevents double-sending per customer/rule) -----------
+
+CREATE TABLE IF NOT EXISTS `communications_log` (
+  `id`           VARCHAR(36)   PRIMARY KEY,
+  `customer_id`  INT           NOT NULL,
+  `rule_id`      INT           NOT NULL,
+  `sent_at`      TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`customer_id`) REFERENCES `customers` (`id`)        ON DELETE CASCADE,
+  FOREIGN KEY (`rule_id`)     REFERENCES `automation_rules` (`id`) ON DELETE CASCADE,
+  UNIQUE KEY `unique_customer_rule` (`customer_id`, `rule_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

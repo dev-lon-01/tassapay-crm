@@ -6,7 +6,7 @@ import type { RowDataPacket, ResultSetHeader } from "mysql2";
 
 /**
  * GET /api/users
- * Admin only — list all staff members (no password hash)
+ * Admin only - list all staff members (no password hash)
  */
 export async function GET(req: NextRequest) {
   const auth = requireAuth(req);
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
 
 /**
  * POST /api/users
- * Admin only — create a new user
+ * Admin only - create a new user
  * Body: { name, email, password, role }
  */
 export async function POST(req: NextRequest) {

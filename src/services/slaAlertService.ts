@@ -129,7 +129,7 @@ export async function checkAndFireSlaAlerts(): Promise<void> {
           .send({
             from: FROM,
             to: [email],
-            subject: `🚨 Urgent: Somalia Transfer Delayed — ${transfer.transaction_ref}`,
+            subject: `🚨 Urgent: Somalia Transfer Delayed - ${transfer.transaction_ref}`,
             text: message,
             html: `<p style="font-family:sans-serif">${message}</p>`,
           })

@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     );
 
     if (!rows.length) {
-      // Deliberate vague message — don't reveal whether the email exists
+      // Deliberate vague message - don't reveal whether the email exists
       return NextResponse.json(
         { error: "Invalid email or password" },
         { status: 401 }
