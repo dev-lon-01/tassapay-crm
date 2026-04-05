@@ -193,7 +193,7 @@ export default function CustomerProfilePage({
     NOTE_PLACEHOLDER,
     ...(dbNoteOutcomes.length > 0
       ? dbNoteOutcomes
-      : ["Left Voicemail","Requested Callback","Number Disconnected","Not Interested","Sent WhatsApp Info","Invalid Details"]),
+      : ["Left Voicemail","Requested Callback","Number Dis","Not Interested","Sent WhatsApp Info","Invalid Details"]),
   ];
 
   const focusPosition = queuePosition(params.id);

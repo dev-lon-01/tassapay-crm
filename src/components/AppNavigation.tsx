@@ -30,13 +30,14 @@ const navItems: NavItem[] = [
 ];
 
 const adminItems: NavItem[] = [
-  { label: "Analytics",    href: "/analytics",                  icon: BarChart2   },
-  { label: "Commissions",  href: "/commissions",                icon: Award       },
-  { label: "Payments",     href: "/admin/payments",             icon: CreditCard  },
-  { label: "Exceptions",   href: "/admin/finance/exceptions",   icon: Scale       },
-  { label: "Team",         href: "/team",                       icon: UsersRound  },
-  { label: "Sync",         href: "/sync",                       icon: RefreshCw   },
-  { label: "Alerts",       href: "/settings/alerts",            icon: Bell        },
+  { label: "Analytics",    href: "/analytics",                       icon: BarChart2   },
+  { label: "Commissions",  href: "/commissions",                     icon: Award       },
+  { label: "Payments",     href: "/admin/payments",                  icon: CreditCard  },
+  { label: "Exceptions",   href: "/admin/finance/exceptions",        icon: Scale       },
+  { label: "Compliance",   href: "/admin/compliance/velocity",       icon: ShieldAlert },
+  { label: "Team",         href: "/team",                            icon: UsersRound  },
+  { label: "Sync",         href: "/sync",                            icon: RefreshCw   },
+  { label: "Alerts",       href: "/settings/alerts",                 icon: Bell        },
 ];
 
 // Rule of 4: only 3 primary links + "More" button on mobile
