@@ -96,15 +96,18 @@ export async function GET(req: NextRequest) {
         commMap[r.status as string] = { cnt: Number(r.cnt), total: Number(r.total ?? 0) };
       }
 
-      // Leaderboard rank (by transfer conversions this period)
+      // Leaderboard rank (by transfer conversions, tie-break by total activities)
       const [leaderboard] = await conn.query<RowDataPacket[]>(
         `SELECT u.id AS agentId,
                 (SELECT COUNT(*) FROM transfers t
                  WHERE t.attributed_agent_id = u.id
-                   AND t.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)) AS conversions
+                   AND t.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)) AS conversions,
+                (SELECT COUNT(*) FROM interactions i
+                 WHERE i.agent_id = u.id
+                   AND i.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)) AS activities
          FROM users u WHERE u.role = 'Agent' AND u.is_active = 1
-         ORDER BY conversions DESC`,
-        [days],
+         ORDER BY conversions DESC, activities DESC`,
+        [days, days],
       );
       let myRank = 0;
       for (let i = 0; i < leaderboard.length; i++) {

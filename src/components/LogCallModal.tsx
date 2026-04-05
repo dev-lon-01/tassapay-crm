@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Loader2, Phone, PhoneCall, X } from "lucide-react";
 import { apiFetch } from "@/src/lib/apiFetch";
 
@@ -46,10 +46,13 @@ export function LogCallModal({
   const [connected, setConnected] = useState<"" | "yes" | "no">("");
   const [durationMinutes, setDurationMinutes] = useState("");
   const [saving, setSaving] = useState(false);
+  const submittedRef = useRef(false);
 
   const isTwilio = callSource === "twilio" && twilioData;
 
   async function handleSubmit() {
+    if (submittedRef.current) return;   // prevent double-submit race
+    submittedRef.current = true;
     setSaving(true);
     try {
       let callDurationSeconds: number | null = null;
@@ -88,6 +91,7 @@ export function LogCallModal({
       });
       onClose();
     } catch {
+      submittedRef.current = false;
       setSaving(false);
     }
   }
