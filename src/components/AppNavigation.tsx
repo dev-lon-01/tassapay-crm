@@ -4,7 +4,7 @@ import { useState, type ComponentType } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  ArrowLeftRight, Award, BarChart2, Bell, Bot, CheckSquare, CreditCard, FileText,
+  ArrowLeftRight, Award, BarChart2, Bell, Bot, CheckSquare, ClipboardList, CreditCard, FileText,
   LayoutDashboard, ListFilter, LogOut, Menu, RefreshCw, Activity,
   ShieldAlert, Users, UsersRound, X, UserPlus, Scale,
 } from "lucide-react";
@@ -22,6 +22,7 @@ const navItems: NavItem[] = [
   { label: "Leads",       href: "/leads",        icon: UserPlus },
   { label: "Transfers",   href: "/transfers",    icon: ArrowLeftRight },
   { label: "My Tasks",    href: "/my-tasks",     icon: CheckSquare },
+  { label: "To Do",       href: "/to-do",        icon: ClipboardList },
   { label: "QA",          href: "/qa-transfers", icon: ShieldAlert },
   { label: "Templates",   href: "/templates",    icon: FileText },
   { label: "Automations", href: "/automations",  icon: Bot },
@@ -52,6 +53,7 @@ const drawerItems: NavItem[] = [
   { label: "My Stats",    href: "/my-dashboard", icon: Award },
   { label: "Leads",       href: "/leads",        icon: UserPlus },
   { label: "Transfers",   href: "/transfers",    icon: ArrowLeftRight },
+  { label: "To Do",       href: "/to-do",        icon: ClipboardList },
   { label: "QA",          href: "/qa-transfers", icon: ShieldAlert },
   { label: "Templates",   href: "/templates",    icon: FileText },
   { label: "Automations", href: "/automations",  icon: Bot },

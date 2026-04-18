@@ -195,18 +195,34 @@ export async function POST(req: NextRequest) {
 
         let attributedAgentId: number | null = null;
         if (isFirstTransfer) {
-          const [agentRows] = await conn.execute<RowDataPacket[]>(
-            `SELECT agent_id FROM interactions
-             WHERE  customer_id = ?
-               AND  agent_id IS NOT NULL
-               AND  type = 'Call'
-               AND  call_duration_seconds > 120
-               AND  created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-             ORDER BY created_at DESC
-             LIMIT 1`,
+          // Check if this customer was a converted lead
+          const [leadRows] = await conn.execute<RowDataPacket[]>(
+            `SELECT lead_stage FROM customers WHERE customer_id = ? AND lead_stage = 'Converted'`,
             [customerId]
           );
-          attributedAgentId = agentRows[0]?.agent_id ?? null;
+          const wasConvertedLead = leadRows.length > 0;
+
+          if (wasConvertedLead) {
+            // Attribution: last qualifying call (>120s) within 30 days before conversion
+            const [agentRows] = await conn.execute<RowDataPacket[]>(
+              `SELECT i.agent_id FROM interactions i
+               LEFT JOIN (
+                 SELECT customer_id, created_at
+                 FROM interactions
+                 WHERE type = 'System' AND outcome = 'Converted' AND customer_id = ?
+               ) conv ON conv.customer_id = i.customer_id
+               WHERE  i.customer_id = ?
+                 AND  i.agent_id IS NOT NULL
+                 AND  i.type = 'Call'
+                 AND  i.call_duration_seconds > 120
+                 AND  i.created_at >= DATE_SUB(COALESCE(conv.created_at, NOW()), INTERVAL 30 DAY)
+                 AND  i.created_at <= COALESCE(conv.created_at, NOW())
+               ORDER BY i.created_at DESC
+               LIMIT 1`,
+              [customerId, customerId]
+            );
+            attributedAgentId = agentRows[0]?.agent_id ?? null;
+          }
           if (attributedAgentId) attributed++;
         }
 

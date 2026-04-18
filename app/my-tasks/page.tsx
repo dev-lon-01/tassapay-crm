@@ -291,7 +291,7 @@ export default function MyTasksPage() {
     if (selectedCountry !== "All") p.set("country",   selectedCountry);
     p.set("sort", sortDir);
 
-    apiFetch(`/api/tasks?${p.toString()}`)
+    apiFetch(`/api/queue?${p.toString()}`)
       .then((r) => r.json())
       .then((res: { data: QueueCustomer[]; total: number }) => {
         setRawCustomers(Array.isArray(res.data) ? res.data : []);

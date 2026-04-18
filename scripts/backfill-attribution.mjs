@@ -66,36 +66,48 @@ async function main() {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 1: Transfer Attribution
+// Phase 1: Transfer Attribution (Lead Conversion)
 //
-// For each customer, find their earliest transfer. If it has no
-// attributed_agent_id, look back 30 days from that transfer's created_at
-// for the most recent qualifying Call interaction (> 120 seconds).
+// For each converted lead, find when they converted (System interaction with
+// outcome='Converted'), then look back 30 days from that conversion date
+// for the last qualifying Call > 120s. That agent gets attribution on the
+// customer's first transfer.
 // ---------------------------------------------------------------------------
 async function phaseTransferAttribution(conn) {
-  console.log("--- Phase 1: Transfer Attribution ---");
+  console.log("--- Phase 1: Transfer Attribution (Lead Conversion) ---");
 
-  // Find each customer's first transfer that is currently unattributed.
-  // We pick MIN(id) per customer as the "first transfer".
+  // Find each converted lead's first transfer + conversion date.
+  // Conversion date = the System interaction logged by lead-conversion-worker.
   const [rows] = await conn.execute(`
-    SELECT t.id AS transfer_id, t.customer_id, t.created_at
+    SELECT t.id AS transfer_id, t.customer_id, t.created_at AS transfer_date,
+           conv.created_at AS conversion_date
     FROM transfers t
     INNER JOIN (
       SELECT customer_id, MIN(id) AS first_id
       FROM transfers
       GROUP BY customer_id
     ) first ON t.id = first.first_id
+    INNER JOIN customers c ON c.customer_id = t.customer_id
+                           AND c.lead_stage = 'Converted'
+    LEFT JOIN (
+      SELECT customer_id, created_at
+      FROM interactions
+      WHERE type = 'System' AND outcome = 'Converted'
+    ) conv ON conv.customer_id = t.customer_id
     WHERE t.attributed_agent_id IS NULL
     ORDER BY t.id
   `);
 
-  console.log(`  Found ${rows.length} unattributed first-transfers\n`);
+  console.log(`  Found ${rows.length} unattributed first-transfers from converted leads\n`);
 
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
     const batch = rows.slice(i, i + BATCH_SIZE);
 
     for (const row of batch) {
-      // Look back 30 days from the transfer date for last-touch Call > 120s
+      // Anchor date: conversion date if available, otherwise fall back to transfer date
+      const anchorDate = row.conversion_date || row.transfer_date;
+
+      // Look back 30 days from conversion for last-touch Call > 120s
       const [agentRows] = await conn.execute(
         `SELECT agent_id FROM interactions
          WHERE  customer_id = ?
@@ -106,7 +118,7 @@ async function phaseTransferAttribution(conn) {
            AND  created_at <= ?
          ORDER BY created_at DESC
          LIMIT 1`,
-        [row.customer_id, row.created_at, row.created_at]
+        [row.customer_id, anchorDate, anchorDate]
       );
 
       const agentId = agentRows[0]?.agent_id ?? null;
@@ -116,7 +128,8 @@ async function phaseTransferAttribution(conn) {
       }
 
       console.log(
-        `  Transfer #${row.transfer_id} (customer ${row.customer_id}) → agent ${agentId} (${agentNames[agentId] || 'Unknown'})`
+        `  Transfer #${row.transfer_id} (customer ${row.customer_id}) → agent ${agentId} (${agentNames[agentId] || 'Unknown'})` +
+        `  [converted: ${new Date(anchorDate).toISOString().slice(0, 10)}]`
       );
 
       if (!DRY_RUN) {

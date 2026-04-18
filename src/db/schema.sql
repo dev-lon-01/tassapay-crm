@@ -459,3 +459,53 @@ CREATE TABLE IF NOT EXISTS `communications_log` (
   FOREIGN KEY (`rule_id`)     REFERENCES `automation_rules` (`id`) ON DELETE CASCADE,
   UNIQUE KEY `unique_customer_rule` (`customer_id`, `rule_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ─── tasks (to-do items linked to customers) ──────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS `tasks` (
+  `id`                INT           NOT NULL AUTO_INCREMENT,
+  `customer_id`       VARCHAR(50)   NOT NULL,                          -- FK → customers.customer_id
+  `title`             VARCHAR(255)  NOT NULL,
+  `description`       TEXT          DEFAULT NULL,
+  `category`          ENUM('Query','Action','KYC','Payment_Issue') NOT NULL DEFAULT 'Query',
+  `priority`          ENUM('Low','Medium','High','Urgent')          NOT NULL DEFAULT 'Medium',
+  `status`            ENUM('Open','In_Progress','Pending','Closed') NOT NULL DEFAULT 'Open',
+  `assigned_agent_id` INT           DEFAULT NULL,                      -- FK → users.id  (NULL = unassigned)
+  `created_by`        INT           NOT NULL,                          -- FK → users.id
+  `created_at`        TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`        TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  CONSTRAINT `fk_tasks_customer`
+    FOREIGN KEY (`customer_id`) REFERENCES `customers` (`customer_id`)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_tasks_assigned_agent`
+    FOREIGN KEY (`assigned_agent_id`) REFERENCES `users` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_tasks_created_by`
+    FOREIGN KEY (`created_by`) REFERENCES `users` (`id`)
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+  INDEX `idx_tasks_customer`       (`customer_id`),
+  INDEX `idx_tasks_assigned_agent` (`assigned_agent_id`),
+  INDEX `idx_tasks_status`         (`status`),
+  INDEX `idx_tasks_priority`       (`priority`),
+  INDEX `idx_tasks_created_at`     (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ─── task_comments (action log per task) ──────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS `task_comments` (
+  `id`         INT       NOT NULL AUTO_INCREMENT,
+  `task_id`    INT       NOT NULL,             -- FK → tasks.id
+  `agent_id`   INT       NOT NULL,             -- FK → users.id
+  `comment`    TEXT      NOT NULL,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  CONSTRAINT `fk_task_comments_task`
+    FOREIGN KEY (`task_id`) REFERENCES `tasks` (`id`)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_task_comments_agent`
+    FOREIGN KEY (`agent_id`) REFERENCES `users` (`id`)
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+  INDEX `idx_task_comments_task`  (`task_id`),
+  INDEX `idx_task_comments_agent` (`agent_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

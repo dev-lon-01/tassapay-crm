@@ -105,7 +105,7 @@ export async function GET(req: NextRequest) {
                 (SELECT COUNT(*) FROM interactions i
                  WHERE i.agent_id = u.id
                    AND i.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)) AS activities
-         FROM users u WHERE u.role = 'Agent' AND u.is_active = 1
+         FROM users u WHERE u.role = 'Agent' AND u.is_active = 1 AND u.name != 'Test Agent'
          ORDER BY conversions DESC, activities DESC`,
         [days, days],
       );

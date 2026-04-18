@@ -27,6 +27,10 @@ import {
   Mic,
   MicOff,
   PlayCircle,
+  ClipboardList,
+  Circle,
+  Minus,
+  ExternalLink,
 } from "lucide-react";
 import { normalizePhone } from "@/src/lib/phoneUtils";
 import { apiFetch } from "@/src/lib/apiFetch";
@@ -87,6 +91,30 @@ interface ApiTemplate {
   channel: "SMS" | "Email";
   subject: string | null;
   body: string;
+}
+
+interface CustomerTask {
+  id: number;
+  customer_id: string;
+  title: string;
+  description: string | null;
+  category: string;
+  priority: "Low" | "Medium" | "High" | "Urgent";
+  status: "Open" | "In_Progress" | "Pending" | "Closed";
+  assigned_agent_id: number | null;
+  assigned_agent_name: string | null;
+  created_by_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface TaskComment {
+  id: number;
+  task_id: number;
+  agent_id: number;
+  agent_name: string | null;
+  comment: string;
+  created_at: string;
 }
 
 function formatRelative(iso: string): string {
@@ -234,6 +262,12 @@ export default function CustomerProfilePage({
   const [transferTotal, setTransferTotal] = useState(0);
   const TRANSFERS_PER_PAGE = 10;
 
+  // ── tasks state ────────────────────────────────────────────────────────────
+  const [customerTasks, setCustomerTasks] = useState<CustomerTask[]>([]);
+  const [taskComments, setTaskComments] = useState<TaskComment[]>([]);
+  const [tasksLoading, setTasksLoading] = useState(false);
+  const [tasksTab, setTasksTab] = useState<"active" | "history">("active");
+
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 4000);
@@ -285,6 +319,34 @@ export default function CustomerProfilePage({
       .then((data) => setTemplates(Array.isArray(data) ? data : []))
       .catch(() => {});
   }, []);
+
+  // ── tasks fetch ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (loading || notFound) return;
+    setTasksLoading(true);
+    apiFetch(`/api/todos?customerId=${encodeURIComponent(params.id)}&view=all&limit=100`)
+      .then((r) => r.json())
+      .then(async (data) => {
+        const tasks: CustomerTask[] = data.data ?? [];
+        setCustomerTasks(tasks);
+        // Fetch comments for all tasks to show action history
+        const allComments: TaskComment[] = [];
+        await Promise.all(
+          tasks.map((t) =>
+            apiFetch(`/api/todos/${t.id}/comments`)
+              .then((r) => r.json())
+              .then((d) => { allComments.push(...(d.data ?? [])); })
+              .catch(() => {})
+          )
+        );
+        allComments.sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+        setTaskComments(allComments);
+        setTasksLoading(false);
+      })
+      .catch(() => setTasksLoading(false));
+  }, [params.id, loading, notFound]);
 
   const applyTemplate = useCallback(
     (templateId: string) => {
@@ -1212,6 +1274,132 @@ export default function CustomerProfilePage({
               ))}
             </div>
           </ol>
+        )}
+      </div>
+
+      {/* ── Tasks Card ─────────────────────────────────────────────────── */}
+      <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="flex items-center gap-2 text-base font-semibold text-slate-900">
+            <ClipboardList size={16} className="text-indigo-500" />
+            Tasks
+            {customerTasks.length > 0 && (
+              <span className="ml-1 rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-600">
+                {customerTasks.length}
+              </span>
+            )}
+          </h2>
+          <a
+            href={`/to-do`}
+            className="flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-800"
+          >
+            <ExternalLink size={12} />
+            View All
+          </a>
+        </div>
+
+        {/* Sub-tabs */}
+        <div className="mb-4 flex gap-1 rounded-xl bg-slate-100 p-1">
+          {(["active", "history"] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setTasksTab(tab)}
+              className={`flex-1 rounded-lg py-1.5 text-sm font-medium transition-all ${
+                tasksTab === tab
+                  ? "bg-white text-indigo-700 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              {tab === "active" ? "Active Tasks" : "Action History"}
+            </button>
+          ))}
+        </div>
+
+        {tasksLoading ? (
+          <div className="flex items-center justify-center gap-2 py-8 text-slate-400">
+            <Loader2 size={18} className="animate-spin" />
+            <span className="text-sm">Loading tasks…</span>
+          </div>
+        ) : tasksTab === "active" ? (
+          (() => {
+            const active = customerTasks.filter((t) => t.status !== "Closed");
+            return active.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-2 py-8">
+                <ClipboardList size={28} className="text-slate-200" />
+                <p className="text-sm text-slate-400">No active tasks for this customer</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {active.map((task) => (
+                  <div
+                    key={task.id}
+                    className="flex items-start justify-between gap-3 rounded-xl border border-slate-100 p-3 hover:bg-slate-50/60"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-slate-800">{task.title}</p>
+                      {task.description && (
+                        <p className="mt-0.5 truncate text-xs text-slate-400">{task.description}</p>
+                      )}
+                      <p className="mt-1 text-xs text-slate-400">
+                        {task.assigned_agent_name ?? "Unassigned"} · {new Date(task.updated_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                      </p>
+                    </div>
+                    <div className="flex flex-shrink-0 flex-col items-end gap-1.5">
+                      {/* priority */}
+                      {(task.priority === "Urgent") && (
+                        <span className="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700 ring-1 ring-red-200">Urgent</span>
+                      )}
+                      {/* status */}
+                      {task.status === "Open" && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                          <Circle size={8} />Open
+                        </span>
+                      )}
+                      {task.status === "In_Progress" && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700 ring-1 ring-blue-200">
+                          <Clock size={8} />In Progress
+                        </span>
+                      )}
+                      {task.status === "Pending" && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-amber-200">
+                          <Minus size={8} />Pending
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()
+        ) : (
+          (() => {
+            return taskComments.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-2 py-8">
+                <MessageSquare size={28} className="text-slate-200" />
+                <p className="text-sm text-slate-400">No action logs yet</p>
+              </div>
+            ) : (
+              <ol className="relative space-y-4">
+                <span className="absolute bottom-3 left-[18px] top-3 w-px bg-slate-100" aria-hidden="true" />
+                {taskComments.slice(0, 20).map((c) => (
+                  <li key={c.id} className="relative flex gap-4">
+                    <span className="relative z-10 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-600">
+                      <MessageSquare size={14} />
+                    </span>
+                    <div className="min-w-0 flex-1 pt-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-sm font-medium text-slate-700">{c.comment}</p>
+                        <span className="flex-shrink-0 text-xs text-slate-400">
+                          {new Date(c.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-xs text-slate-400">{c.agent_name ?? "Agent"}</p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            );
+          })()
         )}
       </div>
 
