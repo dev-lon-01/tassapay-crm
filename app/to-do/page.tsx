@@ -50,6 +50,19 @@ interface Agent {
   name: string;
 }
 
+interface CustomerSearchRow {
+  customer_id: string;
+  full_name: string | null;
+  email: string | null;
+  phone_number: string | null;
+  country: string | null;
+  total_transfers: number;
+}
+
+interface CustomerSearchResponse {
+  data?: CustomerSearchRow[];
+}
+
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
 function priorityBadge(priority: TaskPriority) {
@@ -109,12 +122,117 @@ function CreateTaskModal({ agents, onClose, onCreated }: CreateTaskModalProps) {
     priority: "Medium" as TaskPriority,
     assigned_agent_id: user?.id ? String(user.id) : "",
   });
+  const [customerQuery, setCustomerQuery] = useState("");
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerSearchRow | null>(null);
+  const [customerOptions, setCustomerOptions] = useState<CustomerSearchRow[]>([]);
+  const [customerLoading, setCustomerLoading] = useState(false);
+  const [customerOpen, setCustomerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  const customerRef = useRef<HTMLDivElement>(null);
+  const customerDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function optionLabel(c: CustomerSearchRow): string {
+    return `${c.full_name ?? "Unnamed Customer"} (${c.customer_id})`;
+  }
+
+  function optionMeta(c: CustomerSearchRow): string {
+    const parts = [
+      c.email,
+      c.phone_number,
+      c.country,
+      c.total_transfers > 0 ? `${c.total_transfers} transfers` : "0 transfers",
+    ].filter(Boolean);
+    return parts.join(" · ");
+  }
+
+  function parseRows(data: unknown): CustomerSearchRow[] {
+    if (Array.isArray(data)) return data as CustomerSearchRow[];
+    if (data && typeof data === "object") {
+      const rows = (data as CustomerSearchResponse).data;
+      return Array.isArray(rows) ? rows : [];
+    }
+    return [];
+  }
+
+  useEffect(() => {
+    function handleOutsideClick(e: MouseEvent) {
+      if (customerRef.current && !customerRef.current.contains(e.target as Node)) {
+        setCustomerOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, []);
+
+  useEffect(() => {
+    if (customerDebounceRef.current) clearTimeout(customerDebounceRef.current);
+
+    const q = customerQuery.trim();
+    if (!q) {
+      setCustomerOptions([]);
+      setCustomerLoading(false);
+      return;
+    }
+
+    customerDebounceRef.current = setTimeout(async () => {
+      setCustomerLoading(true);
+      try {
+        const encoded = encodeURIComponent(q);
+        const [searchRes, refRes] = await Promise.all([
+          apiFetch(`/api/customers?search=${encoded}&page=1&limit=8`),
+          apiFetch(`/api/customers?reference_search=${encoded}&page=1&limit=8`),
+        ]);
+
+        const [searchData, refData] = await Promise.all([
+          searchRes.ok ? searchRes.json() : Promise.resolve([]),
+          refRes.ok ? refRes.json() : Promise.resolve([]),
+        ]);
+
+        const merged = [...parseRows(searchData), ...parseRows(refData)];
+        const seen = new Set<string>();
+        const deduped = merged.filter((c) => {
+          if (!c?.customer_id || seen.has(c.customer_id)) return false;
+          seen.add(c.customer_id);
+          return true;
+        });
+
+        setCustomerOptions(deduped);
+      } catch {
+        setCustomerOptions([]);
+      } finally {
+        setCustomerLoading(false);
+      }
+    }, 300);
+
+    return () => {
+      if (customerDebounceRef.current) clearTimeout(customerDebounceRef.current);
+    };
+  }, [customerQuery]);
+
+  function onCustomerQueryChange(value: string) {
+    setCustomerQuery(value);
+    setCustomerOpen(true);
+
+    if (selectedCustomer && value !== optionLabel(selectedCustomer)) {
+      setSelectedCustomer(null);
+      setForm((prev) => ({ ...prev, customer_id: "" }));
+    }
+  }
+
+  function onSelectCustomer(c: CustomerSearchRow) {
+    setSelectedCustomer(c);
+    setCustomerQuery(optionLabel(c));
+    setForm((prev) => ({ ...prev, customer_id: c.customer_id }));
+    setCustomerOptions([]);
+    setCustomerOpen(false);
+    setError("");
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.customer_id.trim()) { setError("Customer ID is required"); return; }
+    if (!selectedCustomer || !form.customer_id.trim()) { setError("Please select a customer"); return; }
     if (!form.title.trim())       { setError("Title is required");       return; }
     setError("");
     setSaving(true);
@@ -165,15 +283,50 @@ function CreateTaskModal({ agents, onClose, onCreated }: CreateTaskModalProps) {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-slate-600">Customer ID *</label>
-            <input
-              type="text"
-              className={inputCls}
-              placeholder="e.g. 10045"
-              value={form.customer_id}
-              onChange={(e) => setForm({ ...form, customer_id: e.target.value })}
-            />
+          <div className="relative" ref={customerRef}>
+            <label className="mb-1 block text-xs font-semibold text-slate-600">Customer *</label>
+            <div className="relative">
+              <input
+                type="text"
+                className={inputCls}
+                placeholder="Search by name, email, phone, ID or transfer ref"
+                value={customerQuery}
+                onFocus={() => setCustomerOpen(true)}
+                onChange={(e) => onCustomerQueryChange(e.target.value)}
+              />
+              {customerLoading && (
+                <Loader2 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-slate-400" />
+              )}
+            </div>
+
+            {customerOpen && (
+              <div className="absolute left-0 right-0 z-30 mt-1 max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+                {customerLoading && customerOptions.length === 0 ? (
+                  <div className="flex items-center justify-center gap-2 px-3 py-3 text-sm text-slate-500">
+                    <Loader2 size={14} className="animate-spin" />
+                    Searching customers...
+                  </div>
+                ) : customerQuery.trim() && customerOptions.length === 0 ? (
+                  <div className="px-3 py-3 text-sm text-slate-500">No customers found</div>
+                ) : customerOptions.length > 0 ? (
+                  <div className="divide-y divide-slate-100">
+                    {customerOptions.map((c) => (
+                      <button
+                        key={c.customer_id}
+                        type="button"
+                        onClick={() => onSelectCustomer(c)}
+                        className="w-full px-3 py-2.5 text-left transition hover:bg-slate-50"
+                      >
+                        <p className="truncate text-sm font-medium text-slate-800">{optionLabel(c)}</p>
+                        <p className="truncate text-xs text-slate-500">{optionMeta(c)}</p>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="px-3 py-3 text-sm text-slate-500">Start typing to search customers</div>
+                )}
+              </div>
+            )}
           </div>
           <div>
             <label className="mb-1 block text-xs font-semibold text-slate-600">Title *</label>

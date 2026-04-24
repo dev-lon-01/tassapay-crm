@@ -191,7 +191,7 @@ export async function POST(req: NextRequest) {
     const insertId = result.insertId;
 
     // Return the full task row with joined names
-    const [[rows]] = await pool.execute<RowDataPacket[]>(
+    const [rows] = await pool.execute<RowDataPacket[]>(
       `SELECT
          t.id, t.customer_id, t.title, t.description, t.category, t.priority,
          t.status, t.assigned_agent_id, t.created_by, t.created_at, t.updated_at,
@@ -206,7 +206,9 @@ export async function POST(req: NextRequest) {
       [insertId]
     );
 
-    return NextResponse.json(rows[0], { status: 201 });
+    // rows is an array of RowDataPacket; return the first row (or null)
+    const firstRow = Array.isArray(rows) ? (rows as RowDataPacket[])[0] ?? null : null;
+    return NextResponse.json(firstRow, { status: 201 });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[POST /api/todos]", message);
