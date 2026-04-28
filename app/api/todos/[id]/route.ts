@@ -23,13 +23,15 @@ export async function GET(
   try {
     const [taskRows] = await pool.execute<RowDataPacket[]>(
       `SELECT
-         t.id, t.customer_id, t.title, t.description, t.category, t.priority,
+         t.id, t.customer_id, t.transfer_reference, tr.id AS transfer_id,
+         t.title, t.description, t.category, t.priority,
          t.status, t.assigned_agent_id, t.created_by, t.created_at, t.updated_at,
          c.full_name AS customer_name,
          u.name      AS assigned_agent_name,
          cb.name     AS created_by_name
        FROM tasks t
-       LEFT JOIN customers c  ON c.customer_id = t.customer_id
+       LEFT JOIN customers c  ON c.customer_id  = t.customer_id
+       LEFT JOIN transfers tr ON tr.transaction_ref = t.transfer_reference
        LEFT JOIN users     u  ON u.id           = t.assigned_agent_id
        LEFT JOIN users     cb ON cb.id          = t.created_by
        WHERE t.id = ?`,
@@ -188,13 +190,15 @@ export async function PATCH(
     // Return updated task with joined names
     const [taskRows] = await pool.execute<RowDataPacket[]>(
       `SELECT
-         t.id, t.customer_id, t.transfer_reference, t.title, t.description, t.category, t.priority,
+         t.id, t.customer_id, t.transfer_reference, tr.id AS transfer_id,
+         t.title, t.description, t.category, t.priority,
          t.status, t.assigned_agent_id, t.created_by, t.created_at, t.updated_at,
          c.full_name AS customer_name,
          u.name      AS assigned_agent_name,
          cb.name     AS created_by_name
        FROM tasks t
-       LEFT JOIN customers c  ON c.customer_id = t.customer_id
+       LEFT JOIN customers c  ON c.customer_id  = t.customer_id
+       LEFT JOIN transfers tr ON tr.transaction_ref = t.transfer_reference
        LEFT JOIN users     u  ON u.id           = t.assigned_agent_id
        LEFT JOIN users     cb ON cb.id          = t.created_by
        WHERE t.id = ?`,

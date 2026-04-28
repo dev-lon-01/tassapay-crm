@@ -32,6 +32,7 @@ interface Task {
   id: number;
   customer_id: string;
   transfer_reference: string | null;
+  transfer_id: number | null;
   customer_name: string | null;
   title: string;
   description: string | null;
@@ -1060,7 +1061,7 @@ function TaskRow({ task, onClose, onCommentAdded, onNavigateCustomer }: TaskRowP
             )}
             {task.transfer_reference && (
               <a
-                href={`/transfers?search=${encodeURIComponent(task.transfer_reference)}`}
+                href={task.transfer_id ? `/transfers/${task.transfer_id}` : `/transfers?search=${encodeURIComponent(task.transfer_reference ?? "")}`}
                 className="mb-2 inline-flex items-center rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 ring-1 ring-indigo-200 hover:bg-indigo-100"
               >
                 Transfer: {task.transfer_reference}
@@ -1112,7 +1113,7 @@ function MobileTaskCard({ task, onClose, onCommentAdded, onNavigateCustomer }: T
       </div>
       {task.transfer_reference && (
         <a
-          href={`/transfers?search=${encodeURIComponent(task.transfer_reference)}`}
+          href={task.transfer_id ? `/transfers/${task.transfer_id}` : `/transfers?search=${encodeURIComponent(task.transfer_reference ?? "")}`}
           className="mb-2 inline-flex items-center rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 ring-1 ring-indigo-200 hover:bg-indigo-100"
         >
           Transfer: {task.transfer_reference}
