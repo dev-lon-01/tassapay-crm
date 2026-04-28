@@ -69,7 +69,7 @@ export async function POST(
     }
 
     // Verify task exists
-    const [[taskRows]] = await pool.execute<RowDataPacket[]>(
+    const [taskRows] = await pool.execute<RowDataPacket[]>(
       `SELECT id FROM tasks WHERE id = ?`,
       [taskId]
     );

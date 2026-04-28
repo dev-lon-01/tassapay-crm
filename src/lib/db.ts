@@ -21,6 +21,8 @@ function createPool(): mysql.Pool {
     waitForConnections: true,
     connectionLimit: 10,
     timezone: "Z",
+    supportBigNumbers: true,
+    bigNumberStrings: true,
   });
 }
 

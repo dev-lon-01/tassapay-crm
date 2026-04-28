@@ -21,7 +21,7 @@ export async function GET(
   }
 
   try {
-    const [[taskRows]] = await pool.execute<RowDataPacket[]>(
+    const [taskRows] = await pool.execute<RowDataPacket[]>(
       `SELECT
          t.id, t.customer_id, t.title, t.description, t.category, t.priority,
          t.status, t.assigned_agent_id, t.created_by, t.created_at, t.updated_at,
@@ -181,7 +181,7 @@ export async function PATCH(
     }
 
     // Return updated task with joined names
-    const [[taskRows]] = await pool.execute<RowDataPacket[]>(
+    const [taskRows] = await pool.execute<RowDataPacket[]>(
       `SELECT
          t.id, t.customer_id, t.title, t.description, t.category, t.priority,
          t.status, t.assigned_agent_id, t.created_by, t.created_at, t.updated_at,
