@@ -78,8 +78,8 @@ export async function GET(req: NextRequest) {
     }
 
     if (search) {
-      where.push(`t.title LIKE ?`);
-      params.push(`%${search}%`);
+      where.push(`(t.title LIKE ? OR c.full_name LIKE ? OR t.customer_id LIKE ? OR c.email LIKE ?)`);
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
     }
 
     const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
@@ -87,6 +87,9 @@ export async function GET(req: NextRequest) {
     const countSql = `
       SELECT COUNT(*) AS total
       FROM tasks t
+      LEFT JOIN customers   c  ON c.customer_id = t.customer_id
+      LEFT JOIN users       u  ON u.id           = t.assigned_agent_id
+      LEFT JOIN users       cb ON cb.id          = t.created_by
       ${whereClause}
     `;
 
