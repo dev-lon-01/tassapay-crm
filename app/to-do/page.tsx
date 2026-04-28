@@ -73,6 +73,20 @@ interface CustomerSearchResponse {
   data?: CustomerSearchRow[];
 }
 
+interface TransferSearchRow {
+  id: number;
+  transaction_ref: string;
+  data_field_id: string | null;
+  send_amount: string;
+  send_currency: string;
+  receive_amount: string;
+  receive_currency: string;
+  beneficiary_name: string | null;
+  status: string;
+  customer_id: string;
+  full_name: string | null;
+}
+
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
 function priorityBadge(priority: TaskPriority) {
@@ -138,11 +152,18 @@ function CreateTaskModal({ agents, onClose, onCreated }: CreateTaskModalProps) {
   const [customerOptions, setCustomerOptions] = useState<CustomerSearchRow[]>([]);
   const [customerLoading, setCustomerLoading] = useState(false);
   const [customerOpen, setCustomerOpen] = useState(false);
+  const [transferQuery, setTransferQuery]       = useState("");
+  const [selectedTransfer, setSelectedTransfer] = useState<TransferSearchRow | null>(null);
+  const [transferOptions, setTransferOptions]   = useState<TransferSearchRow[]>([]);
+  const [transferLoading, setTransferLoading]   = useState(false);
+  const [transferOpen, setTransferOpen]         = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const customerRef = useRef<HTMLDivElement>(null);
+  const customerRef         = useRef<HTMLDivElement>(null);
   const customerDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const transferRef         = useRef<HTMLDivElement>(null);
+  const transferDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function optionLabel(c: CustomerSearchRow): string {
     return `${c.full_name ?? "Unnamed Customer"} (${c.customer_id})`;
@@ -176,6 +197,48 @@ function CreateTaskModal({ agents, onClose, onCreated }: CreateTaskModalProps) {
     document.addEventListener("mousedown", handleOutsideClick);
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, []);
+
+  useEffect(() => {
+    function handle(e: MouseEvent) {
+      if (transferRef.current && !transferRef.current.contains(e.target as Node))
+        setTransferOpen(false);
+    }
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, []);
+
+  useEffect(() => {
+    if (transferDebounceRef.current) clearTimeout(transferDebounceRef.current);
+    const q = transferQuery.trim();
+    if (q.length < 3) { setTransferOptions([]); return; }
+    transferDebounceRef.current = setTimeout(async () => {
+      setTransferLoading(true);
+      try {
+        const r = await apiFetch(`/api/transfers?search=${encodeURIComponent(q)}&page=1&limit=8`);
+        const d = await r.json();
+        setTransferOptions(Array.isArray(d.data) ? d.data : []);
+      } catch { setTransferOptions([]); }
+      finally { setTransferLoading(false); }
+    }, 300);
+    return () => { if (transferDebounceRef.current) clearTimeout(transferDebounceRef.current); };
+  }, [transferQuery]);
+
+  function onSelectTransfer(t: TransferSearchRow) {
+    setSelectedTransfer(t);
+    setTransferQuery(t.transaction_ref);
+    setTransferOptions([]);
+    setTransferOpen(false);
+    setForm((p) => ({ ...p, transfer_reference: t.transaction_ref }));
+    if (!selectedCustomer) {
+      const synth: CustomerSearchRow = {
+        customer_id: t.customer_id, full_name: t.full_name,
+        email: null, phone_number: null, country: null, total_transfers: 0,
+      };
+      setSelectedCustomer(synth);
+      setCustomerQuery(t.full_name ? `${t.full_name} (${t.customer_id})` : t.customer_id);
+      setForm((p) => ({ ...p, customer_id: t.customer_id }));
+    }
+  }
 
   useEffect(() => {
     if (customerDebounceRef.current) clearTimeout(customerDebounceRef.current);
@@ -340,15 +403,58 @@ function CreateTaskModal({ agents, onClose, onCreated }: CreateTaskModalProps) {
               </div>
             )}
           </div>
-          <div>
+          <div className="relative" ref={transferRef}>
             <label className="mb-1 block text-xs font-semibold text-slate-600">Transfer Reference (optional)</label>
-            <input
-              type="text"
-              className={inputCls}
-              placeholder="e.g. txn_12345 or efu_67890"
-              value={form.transfer_reference}
-              onChange={(e) => setForm({ ...form, transfer_reference: e.target.value })}
-            />
+            <div className="relative">
+              <input
+                type="text"
+                className={inputCls}
+                placeholder="Search by ref e.g. txn12345"
+                value={transferQuery}
+                onFocus={() => setTransferOpen(true)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setTransferQuery(v);
+                  setTransferOpen(true);
+                  setForm((p) => ({ ...p, transfer_reference: v }));
+                  if (selectedTransfer && v !== selectedTransfer.transaction_ref) setSelectedTransfer(null);
+                }}
+              />
+              {transferLoading && (
+                <Loader2 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-slate-400" />
+              )}
+            </div>
+            {selectedTransfer && (
+              <div className="mt-1.5 rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
+                <div className="flex items-center justify-between font-medium">
+                  <span>{selectedTransfer.transaction_ref}</span>
+                  <span>{selectedTransfer.send_amount} {selectedTransfer.send_currency} → {selectedTransfer.receive_amount} {selectedTransfer.receive_currency}</span>
+                </div>
+                <p className="mt-0.5 text-indigo-500">{selectedTransfer.full_name ?? selectedTransfer.customer_id} → {selectedTransfer.beneficiary_name ?? "Unknown beneficiary"}</p>
+              </div>
+            )}
+            {transferOpen && transferQuery.trim().length >= 3 && (
+              <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-60 overflow-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+                {transferOptions.length > 0 ? (
+                  <div className="divide-y divide-slate-100">
+                    {transferOptions.map((t) => (
+                      <button key={t.id} type="button" onClick={() => onSelectTransfer(t)}
+                              className="w-full px-3 py-2.5 text-left transition hover:bg-slate-50">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-slate-800">{t.transaction_ref}</span>
+                          <span className="text-[10px] font-semibold text-slate-500 capitalize">{t.status}</span>
+                        </div>
+                        <p className="truncate text-xs text-slate-500">
+                          {t.full_name ?? t.customer_id} → {t.beneficiary_name ?? "?"} · {t.send_amount} {t.send_currency}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                ) : !transferLoading ? (
+                  <div className="px-3 py-3 text-sm text-slate-500">No transfers found</div>
+                ) : null}
+              </div>
+            )}
           </div>
           <div>
             <label className="mb-1 block text-xs font-semibold text-slate-600">Title *</label>
@@ -1004,6 +1110,15 @@ function MobileTaskCard({ task, onClose, onCommentAdded, onNavigateCustomer }: T
         <span>{task.assigned_agent_name ?? "Unassigned"}</span>
         <span>{formatDate(task.updated_at)}</span>
       </div>
+      {task.transfer_reference && (
+        <a
+          href={`/transfers?search=${encodeURIComponent(task.transfer_reference)}`}
+          className="mb-2 inline-flex items-center rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 ring-1 ring-indigo-200 hover:bg-indigo-100"
+        >
+          Transfer: {task.transfer_reference}
+          <ExternalLink size={10} className="ml-1" />
+        </a>
+      )}
       <CommentsList taskId={task.id} commentKey={commentKey} />
       <div className="flex items-center gap-3 border-t border-slate-100 pt-2.5">
         <AddCommentInline taskId={task.id} onAdded={handleCommentAdded} />
