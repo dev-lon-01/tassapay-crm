@@ -26,7 +26,7 @@ import { useAuth } from "@/src/context/AuthContext";
 type TaskStatus   = "Open" | "In_Progress" | "Pending" | "Closed";
 type TaskPriority = "Low" | "Medium" | "High" | "Urgent";
 type TaskCategory = "Query" | "Action" | "KYC" | "Payment_Issue";
-type ViewTab      = "mine" | "open" | "closed" | "all";
+type ViewTab      = "mine" | "open" | "closed" | "all" | "results";
 
 interface Task {
   id: number;
@@ -604,6 +604,7 @@ export default function ToDoPage() {
   const router = useRouter();
 
   const [view, setView]             = useState<ViewTab>("mine");
+  const [prevView, setPrevView]     = useState<Exclude<ViewTab, "results">>("mine");
   const [tasks, setTasks]           = useState<Task[]>([]);
   const [total, setTotal]           = useState(0);
   const [page, setPage]             = useState(1);
@@ -623,6 +624,18 @@ export default function ToDoPage() {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [search]);
 
+  // Auto-switch to "results" tab when search activates, back when cleared
+  useEffect(() => {
+    if (debouncedSearch) {
+      if (view !== "results") {
+        setPrevView(view as Exclude<ViewTab, "results">);
+        setView("results");
+      }
+    } else {
+      if (view === "results") setView(prevView);
+    }
+  }, [debouncedSearch]);
+
   // Load agents once
   useEffect(() => {
     apiFetch("/api/todos/agents")
@@ -634,7 +647,8 @@ export default function ToDoPage() {
   // Load tasks
   const loadTasks = useCallback(() => {
     setLoading(true);
-    const p = new URLSearchParams({ view, page: String(page), limit: String(PAGE_SIZE) });
+    const apiView = view === "results" ? "all" : view;
+    const p = new URLSearchParams({ view: apiView, page: String(page), limit: String(PAGE_SIZE) });
     if (debouncedSearch) p.set("search", debouncedSearch);
     apiFetch(`/api/todos?${p.toString()}`)
       .then((r) => r.json())
@@ -668,7 +682,9 @@ export default function ToDoPage() {
     }
   }
 
-  const visibleTabs = TABS;
+  const visibleTabs = debouncedSearch
+    ? [{ key: "results" as ViewTab, label: "Results" }, ...TABS]
+    : TABS;
 
   return (
     <div className="min-h-screen bg-slate-50/60 pb-16">
