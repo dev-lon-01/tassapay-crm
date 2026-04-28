@@ -50,6 +50,15 @@ interface Agent {
   name: string;
 }
 
+interface Comment {
+  id: number;
+  task_id: number;
+  agent_id: number | null;
+  comment: string;
+  created_at: string;
+  agent_name: string | null;
+}
+
 interface CustomerSearchRow {
   customer_id: string;
   full_name: string | null;
@@ -486,6 +495,38 @@ function CloseTaskModal({ task, onClose, onClosed }: CloseTaskModalProps) {
   );
 }
 
+// ─── CommentsList ──────────────────────────────────────────────────────────────
+
+function CommentsList({ taskId, commentKey }: { taskId: number; commentKey: number }) {
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [loading, setLoading]   = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    apiFetch(`/api/todos/${taskId}/comments`)
+      .then((r) => r.json())
+      .then((d) => setComments(Array.isArray(d.data) ? d.data : []))
+      .catch(() => setComments([]))
+      .finally(() => setLoading(false));
+  }, [taskId, commentKey]);
+
+  if (loading) return <Loader2 size={12} className="animate-spin text-slate-400 my-2" />;
+  if (comments.length === 0) return null;
+
+  return (
+    <ul className="mb-2 space-y-1.5">
+      {comments.map((c) => (
+        <li key={c.id} className="rounded-lg bg-white border border-slate-100 px-3 py-2 text-xs text-slate-700">
+          <span className="font-medium text-slate-500">{c.agent_name ?? "Agent"}</span>
+          <span className="mx-1.5 text-slate-300">·</span>
+          <span className="text-slate-400">{formatDate(c.created_at)}</span>
+          <p className="mt-0.5 text-slate-700">{c.comment}</p>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 // ─── AddCommentInline ─────────────────────────────────────────────────────────
 
 interface AddCommentProps {
@@ -809,6 +850,12 @@ interface TaskRowProps {
 
 function TaskRow({ task, onClose, onCommentAdded, onNavigateCustomer }: TaskRowProps) {
   const [expanded, setExpanded] = useState(false);
+  const [commentKey, setCommentKey] = useState(0);
+
+  function handleCommentAdded() {
+    setCommentKey((k) => k + 1);
+    onCommentAdded();
+  }
 
   return (
     <>
@@ -859,7 +906,8 @@ function TaskRow({ task, onClose, onCommentAdded, onNavigateCustomer }: TaskRowP
             {task.description && (
               <p className="mb-2 text-sm text-slate-600">{task.description}</p>
             )}
-            <AddCommentInline taskId={task.id} onAdded={onCommentAdded} />
+            <CommentsList taskId={task.id} commentKey={commentKey} />
+            <AddCommentInline taskId={task.id} onAdded={handleCommentAdded} />
           </td>
         </tr>
       )}
@@ -870,6 +918,13 @@ function TaskRow({ task, onClose, onCommentAdded, onNavigateCustomer }: TaskRowP
 // ─── MobileTaskCard ───────────────────────────────────────────────────────────
 
 function MobileTaskCard({ task, onClose, onCommentAdded, onNavigateCustomer }: TaskRowProps) {
+  const [commentKey, setCommentKey] = useState(0);
+
+  function handleCommentAdded() {
+    setCommentKey((k) => k + 1);
+    onCommentAdded();
+  }
+
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-2 flex items-start justify-between gap-2">
@@ -894,8 +949,9 @@ function MobileTaskCard({ task, onClose, onCommentAdded, onNavigateCustomer }: T
         <span>{task.assigned_agent_name ?? "Unassigned"}</span>
         <span>{formatDate(task.updated_at)}</span>
       </div>
+      <CommentsList taskId={task.id} commentKey={commentKey} />
       <div className="flex items-center gap-3 border-t border-slate-100 pt-2.5">
-        <AddCommentInline taskId={task.id} onAdded={onCommentAdded} />
+        <AddCommentInline taskId={task.id} onAdded={handleCommentAdded} />
         {task.status !== "Closed" && (
           <button
             onClick={onClose}
