@@ -2,7 +2,7 @@
 const nextConfig = {
   // Twilio and other Node.js-only packages must not be bundled by webpack
   experimental: {
-    serverComponentsExternalPackages: ["twilio", "bcryptjs", "jsonwebtoken"],
+    serverComponentsExternalPackages: ["twilio", "bcryptjs", "jsonwebtoken", "mysql2"],
   },
   // ESLint plugin 'import' has a tsconfig-paths resolution issue on Node 16.
   // TypeScript type-checking is still enforced at build time via tsc.
