@@ -31,6 +31,7 @@ type ViewTab      = "mine" | "open" | "closed" | "all" | "results";
 interface Task {
   id: number;
   customer_id: string;
+  transfer_reference: string | null;
   customer_name: string | null;
   title: string;
   description: string | null;
@@ -125,6 +126,7 @@ function CreateTaskModal({ agents, onClose, onCreated }: CreateTaskModalProps) {
   const { user } = useAuth();
   const [form, setForm] = useState({
     customer_id: "",
+    transfer_reference: "",
     title: "",
     description: "",
     category: "Query" as TaskCategory,
@@ -251,6 +253,7 @@ function CreateTaskModal({ agents, onClose, onCreated }: CreateTaskModalProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           customer_id:       form.customer_id.trim(),
+          transfer_reference: form.transfer_reference.trim() || null,
           title:             form.title.trim(),
           description:       form.description.trim() || null,
           category:          form.category,
@@ -338,6 +341,16 @@ function CreateTaskModal({ agents, onClose, onCreated }: CreateTaskModalProps) {
             )}
           </div>
           <div>
+            <label className="mb-1 block text-xs font-semibold text-slate-600">Transfer Reference (optional)</label>
+            <input
+              type="text"
+              className={inputCls}
+              placeholder="e.g. txn_12345 or efu_67890"
+              value={form.transfer_reference}
+              onChange={(e) => setForm({ ...form, transfer_reference: e.target.value })}
+            />
+          </div>
+          <div>
             <label className="mb-1 block text-xs font-semibold text-slate-600">Title *</label>
             <input
               type="text"
@@ -413,6 +426,9 @@ interface CloseTaskModalProps {
 }
 
 function CloseTaskModal({ task, onClose, onClosed }: CloseTaskModalProps) {
+  const [form, setForm] = useState({
+    transfer_reference: task.transfer_reference || "",
+  });
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -423,10 +439,14 @@ function CloseTaskModal({ task, onClose, onClosed }: CloseTaskModalProps) {
     setError("");
     setSaving(true);
     try {
+      const updates: Record<string, any> = { status: "Closed", resolution_comment: comment.trim() };
+      if (form.transfer_reference !== task.transfer_reference) {
+        updates.transfer_reference = form.transfer_reference.trim() || null;
+      }
       const res = await apiFetch(`/api/todos/${task.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "Closed", resolution_comment: comment.trim() }),
+        body: JSON.stringify(updates),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -461,6 +481,16 @@ function CloseTaskModal({ task, onClose, onClosed }: CloseTaskModalProps) {
         )}
 
         <form onSubmit={handleClose} className="space-y-4">
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-slate-600">Transfer Reference (optional)</label>
+            <input
+              type="text"
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              placeholder="e.g. txn_12345 or efu_67890"
+              value={form.transfer_reference}
+              onChange={(e) => setForm({ ...form, transfer_reference: e.target.value })}
+            />
+          </div>
           <div>
             <label className="mb-1 block text-xs font-semibold text-slate-600">
               Final Resolution <span className="text-red-500">*</span>
@@ -921,6 +951,15 @@ function TaskRow({ task, onClose, onCommentAdded, onNavigateCustomer }: TaskRowP
           <td colSpan={8} className="px-5 py-3">
             {task.description && (
               <p className="mb-2 text-sm text-slate-600">{task.description}</p>
+            )}
+            {task.transfer_reference && (
+              <a
+                href={`/transfers?search=${encodeURIComponent(task.transfer_reference)}`}
+                className="mb-2 inline-flex items-center rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 ring-1 ring-indigo-200 hover:bg-indigo-100"
+              >
+                Transfer: {task.transfer_reference}
+                <ExternalLink size={10} className="ml-1" />
+              </a>
             )}
             <CommentsList taskId={task.id} commentKey={commentKey} />
             <AddCommentInline taskId={task.id} onAdded={handleCommentAdded} />

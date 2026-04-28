@@ -96,6 +96,7 @@ export async function PATCH(
       status,
       assigned_agent_id,
       resolution_comment,
+      transfer_reference,
     } = body ?? {};
 
     // Enforce resolution comment when closing
@@ -156,6 +157,10 @@ export async function PATCH(
       sets.push("`assigned_agent_id` = ?");
       values.push(typeof assigned_agent_id === "number" ? assigned_agent_id : null);
     }
+    if (transfer_reference !== undefined) {
+      sets.push("`transfer_reference` = ?");
+      values.push(transfer_reference?.trim() || null);
+    }
 
     if (sets.length === 0) {
       return NextResponse.json({ error: "No fields to update" }, { status: 400 });
@@ -183,7 +188,7 @@ export async function PATCH(
     // Return updated task with joined names
     const [taskRows] = await pool.execute<RowDataPacket[]>(
       `SELECT
-         t.id, t.customer_id, t.title, t.description, t.category, t.priority,
+         t.id, t.customer_id, t.transfer_reference, t.title, t.description, t.category, t.priority,
          t.status, t.assigned_agent_id, t.created_by, t.created_at, t.updated_at,
          c.full_name AS customer_name,
          u.name      AS assigned_agent_name,

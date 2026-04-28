@@ -97,6 +97,7 @@ export async function GET(req: NextRequest) {
       SELECT
         t.id,
         t.customer_id,
+        t.transfer_reference,
         t.title,
         t.description,
         t.category,
@@ -160,7 +161,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { customer_id, title, description, category, priority, assigned_agent_id } = body ?? {};
+    const { customer_id, transfer_reference, title, description, category, priority, assigned_agent_id } = body ?? {};
 
     if (!customer_id || typeof customer_id !== "string" || !customer_id.trim()) {
       return NextResponse.json({ error: "customer_id is required" }, { status: 400 });
@@ -178,10 +179,11 @@ export async function POST(req: NextRequest) {
 
     const [result] = await pool.execute<ResultSetHeader>(
       `INSERT INTO tasks
-         (customer_id, title, description, category, priority, status, assigned_agent_id, created_by)
-       VALUES (?, ?, ?, ?, ?, 'Open', ?, ?)`,
+         (customer_id, transfer_reference, title, description, category, priority, status, assigned_agent_id, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, 'Open', ?, ?)`,
       [
         customer_id.trim(),
+        transfer_reference?.trim() || null,
         title.trim(),
         description?.trim() || null,
         safeCategory,
@@ -196,7 +198,7 @@ export async function POST(req: NextRequest) {
     // Return the full task row with joined names
     const [rows] = await pool.execute<RowDataPacket[]>(
       `SELECT
-         t.id, t.customer_id, t.title, t.description, t.category, t.priority,
+         t.id, t.customer_id, t.transfer_reference, t.title, t.description, t.category, t.priority,
          t.status, t.assigned_agent_id, t.created_by, t.created_at, t.updated_at,
          c.full_name AS customer_name,
          u.name      AS assigned_agent_name,
