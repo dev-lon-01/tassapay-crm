@@ -42,6 +42,18 @@ async function tableExists(table) {
   return row.cnt > 0;
 }
 
+async function columnExists(table, column) {
+  const [[row]] = await conn.execute(
+    `SELECT COUNT(*) AS cnt
+     FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME   = ?
+       AND COLUMN_NAME  = ?`,
+    [table, column]
+  );
+  return row.cnt > 0;
+}
+
 async function indexExists(table, idx) {
   const [[row]] = await conn.execute(
     `SELECT COUNT(*) AS cnt
@@ -90,6 +102,17 @@ try {
     console.log("✓ tasks table created");
   } else {
     console.log("  tasks table already exists");
+  }
+
+  // ── 1b. Add transfer_reference column if missing ────────────────────────────
+  if (!(await columnExists("tasks", "transfer_reference"))) {
+    await conn.execute(`
+      ALTER TABLE \`tasks\`
+        ADD COLUMN \`transfer_reference\` VARCHAR(255) DEFAULT NULL AFTER \`customer_id\`
+    `);
+    console.log("✓ tasks.transfer_reference column added");
+  } else {
+    console.log("  tasks.transfer_reference already exists");
   }
 
   // ── 2. task_comments ────────────────────────────────────────────────────────
