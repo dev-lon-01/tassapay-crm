@@ -17,6 +17,7 @@ import {
   Minus,
   ExternalLink,
   MessageSquare,
+  Pencil,
 } from "lucide-react";
 import { apiFetch } from "@/src/lib/apiFetch";
 import { useAuth } from "@/src/context/AuthContext";
@@ -632,6 +633,396 @@ function CloseTaskModal({ task, onClose, onClosed }: CloseTaskModalProps) {
   );
 }
 
+// ─── EditTaskModal ────────────────────────────────────────────────────────────
+
+interface EditTaskModalProps {
+  task: Task;
+  agents: Agent[];
+  onClose: () => void;
+  onSaved: (task: Task) => void;
+}
+
+function EditTaskModal({ task, agents, onClose, onSaved }: EditTaskModalProps) {
+  const [form, setForm] = useState({
+    customer_id:        task.customer_id,
+    title:              task.title,
+    description:        task.description ?? "",
+    category:           task.category,
+    priority:           task.priority,
+    status:             task.status === "Closed" ? "Open" : task.status as Exclude<TaskStatus, "Closed">,
+    assigned_agent_id:  task.assigned_agent_id ? String(task.assigned_agent_id) : "",
+    transfer_reference: task.transfer_reference ?? "",
+  });
+
+  // ── customer autocomplete ──
+  const initialCustomerLabel = task.customer_name
+    ? `${task.customer_name} (${task.customer_id})`
+    : task.customer_id;
+  const [customerQuery,    setCustomerQuery]    = useState(initialCustomerLabel);
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerSearchRow | null>({
+    customer_id: task.customer_id, full_name: task.customer_name,
+    email: null, phone_number: null, country: null, total_transfers: 0,
+  });
+  const [customerOptions,  setCustomerOptions]  = useState<CustomerSearchRow[]>([]);
+  const [customerLoading,  setCustomerLoading]  = useState(false);
+  const [customerOpen,     setCustomerOpen]     = useState(false);
+  const customerRef         = useRef<HTMLDivElement>(null);
+  const customerDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── transfer autocomplete ──
+  const [transferQuery,    setTransferQuery]    = useState(task.transfer_reference ?? "");
+  const [selectedTransfer, setSelectedTransfer] = useState<TransferSearchRow | null>(null);
+  const [transferOptions,  setTransferOptions]  = useState<TransferSearchRow[]>([]);
+  const [transferLoading,  setTransferLoading]  = useState(false);
+  const [transferOpen,     setTransferOpen]     = useState(false);
+  const transferRef         = useRef<HTMLDivElement>(null);
+  const transferDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [saving, setSaving] = useState(false);
+  const [error,  setError]  = useState("");
+
+  function optionLabel(c: CustomerSearchRow) {
+    return `${c.full_name ?? "Unnamed Customer"} (${c.customer_id})`;
+  }
+  function optionMeta(c: CustomerSearchRow) {
+    return [c.email, c.phone_number, c.country,
+      c.total_transfers > 0 ? `${c.total_transfers} transfers` : "0 transfers"]
+      .filter(Boolean).join(" · ");
+  }
+  function parseRows(data: unknown): CustomerSearchRow[] {
+    if (Array.isArray(data)) return data as CustomerSearchRow[];
+    if (data && typeof data === "object") {
+      const rows = (data as CustomerSearchResponse).data;
+      return Array.isArray(rows) ? rows : [];
+    }
+    return [];
+  }
+
+  // outside-click for customer
+  useEffect(() => {
+    function handle(e: MouseEvent) {
+      if (customerRef.current && !customerRef.current.contains(e.target as Node))
+        setCustomerOpen(false);
+    }
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, []);
+
+  // outside-click for transfer
+  useEffect(() => {
+    function handle(e: MouseEvent) {
+      if (transferRef.current && !transferRef.current.contains(e.target as Node))
+        setTransferOpen(false);
+    }
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, []);
+
+  // debounced customer search
+  useEffect(() => {
+    if (customerDebounceRef.current) clearTimeout(customerDebounceRef.current);
+    const q = customerQuery.trim();
+    if (!q) { setCustomerOptions([]); return; }
+    customerDebounceRef.current = setTimeout(async () => {
+      setCustomerLoading(true);
+      try {
+        const encoded = encodeURIComponent(q);
+        const [searchRes, refRes] = await Promise.all([
+          apiFetch(`/api/customers?search=${encoded}&page=1&limit=8`),
+          apiFetch(`/api/customers?reference_search=${encoded}&page=1&limit=8`),
+        ]);
+        const [searchData, refData] = await Promise.all([
+          searchRes.ok ? searchRes.json() : Promise.resolve([]),
+          refRes.ok   ? refRes.json()    : Promise.resolve([]),
+        ]);
+        const merged = [...parseRows(searchData), ...parseRows(refData)];
+        const seen = new Set<string>();
+        setCustomerOptions(merged.filter((c) => {
+          if (!c?.customer_id || seen.has(c.customer_id)) return false;
+          seen.add(c.customer_id); return true;
+        }));
+      } catch { setCustomerOptions([]); }
+      finally { setCustomerLoading(false); }
+    }, 300);
+    return () => { if (customerDebounceRef.current) clearTimeout(customerDebounceRef.current); };
+  }, [customerQuery]);
+
+  // debounced transfer search
+  useEffect(() => {
+    if (transferDebounceRef.current) clearTimeout(transferDebounceRef.current);
+    const q = transferQuery.trim();
+    if (q.length < 3) { setTransferOptions([]); return; }
+    transferDebounceRef.current = setTimeout(async () => {
+      setTransferLoading(true);
+      try {
+        const r = await apiFetch(`/api/transfers?search=${encodeURIComponent(q)}&page=1&limit=8`);
+        const d = await r.json();
+        setTransferOptions(Array.isArray(d.data) ? d.data : []);
+      } catch { setTransferOptions([]); }
+      finally { setTransferLoading(false); }
+    }, 300);
+    return () => { if (transferDebounceRef.current) clearTimeout(transferDebounceRef.current); };
+  }, [transferQuery]);
+
+  function onSelectCustomer(c: CustomerSearchRow) {
+    setSelectedCustomer(c);
+    setCustomerQuery(optionLabel(c));
+    setForm((p) => ({ ...p, customer_id: c.customer_id }));
+    setCustomerOptions([]);
+    setCustomerOpen(false);
+    setError("");
+  }
+
+  function onSelectTransfer(t: TransferSearchRow) {
+    setSelectedTransfer(t);
+    setTransferQuery(t.transaction_ref);
+    setTransferOptions([]);
+    setTransferOpen(false);
+    const synth: CustomerSearchRow = {
+      customer_id: t.customer_id, full_name: t.full_name,
+      email: null, phone_number: null, country: null, total_transfers: 0,
+    };
+    setSelectedCustomer(synth);
+    setCustomerQuery(t.full_name ? `${t.full_name} (${t.customer_id})` : t.customer_id);
+    setForm((p) => ({ ...p, transfer_reference: t.transaction_ref, customer_id: t.customer_id }));
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.customer_id.trim()) { setError("Please select a customer"); return; }
+    if (!form.title.trim())       { setError("Title is required");        return; }
+    setError("");
+    setSaving(true);
+    try {
+      const res = await apiFetch(`/api/todos/${task.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title:              form.title.trim(),
+          description:        form.description.trim() || null,
+          category:           form.category,
+          priority:           form.priority,
+          status:             form.status,
+          assigned_agent_id:  form.assigned_agent_id ? Number(form.assigned_agent_id) : null,
+          transfer_reference: form.transfer_reference.trim() || null,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error ?? "Failed to save changes");
+        return;
+      }
+      const updated: Task = await res.json();
+      onSaved(updated);
+    } catch {
+      setError("Network error — please try again");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const inputCls = "w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+         onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="mb-5 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-slate-800">Edit Task</h2>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+            <X size={16} />
+          </button>
+        </div>
+
+        {error && (
+          <div className="mb-4 flex items-center gap-2 rounded-xl bg-red-50 px-3 py-2.5 text-sm text-red-700">
+            <AlertCircle size={14} className="shrink-0" />{error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Customer autocomplete */}
+          <div className="relative" ref={customerRef}>
+            <label className="mb-1 block text-xs font-semibold text-slate-600">Customer *</label>
+            <div className="relative">
+              <input
+                type="text"
+                className={inputCls}
+                placeholder="Search by name, email, phone, ID or transfer ref"
+                value={customerQuery}
+                onFocus={() => setCustomerOpen(true)}
+                onChange={(e) => {
+                  setCustomerQuery(e.target.value);
+                  setCustomerOpen(true);
+                  if (selectedCustomer && e.target.value !== optionLabel(selectedCustomer)) {
+                    setSelectedCustomer(null);
+                    setForm((p) => ({ ...p, customer_id: "" }));
+                  }
+                }}
+              />
+              {customerLoading && (
+                <Loader2 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-slate-400" />
+              )}
+            </div>
+            {customerOpen && (
+              <div className="absolute left-0 right-0 z-30 mt-1 max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+                {customerLoading && customerOptions.length === 0 ? (
+                  <div className="flex items-center justify-center gap-2 px-3 py-3 text-sm text-slate-500">
+                    <Loader2 size={14} className="animate-spin" />Searching customers...
+                  </div>
+                ) : customerQuery.trim() && customerOptions.length === 0 ? (
+                  <div className="px-3 py-3 text-sm text-slate-500">No customers found</div>
+                ) : customerOptions.length > 0 ? (
+                  <div className="divide-y divide-slate-100">
+                    {customerOptions.map((c) => (
+                      <button key={c.customer_id} type="button" onClick={() => onSelectCustomer(c)}
+                              className="w-full px-3 py-2.5 text-left transition hover:bg-slate-50">
+                        <p className="truncate text-sm font-medium text-slate-800">{optionLabel(c)}</p>
+                        <p className="truncate text-xs text-slate-500">{optionMeta(c)}</p>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="px-3 py-3 text-sm text-slate-500">Start typing to search customers</div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Transfer reference autocomplete */}
+          <div className="relative" ref={transferRef}>
+            <label className="mb-1 block text-xs font-semibold text-slate-600">Transfer Reference (optional)</label>
+            <div className="relative">
+              <input
+                type="text"
+                className={inputCls}
+                placeholder="Search by ref e.g. txn12345"
+                value={transferQuery}
+                onFocus={() => setTransferOpen(true)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setTransferQuery(v);
+                  setTransferOpen(true);
+                  setForm((p) => ({ ...p, transfer_reference: v }));
+                  if (selectedTransfer && v !== selectedTransfer.transaction_ref) setSelectedTransfer(null);
+                }}
+              />
+              {transferLoading && (
+                <Loader2 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-slate-400" />
+              )}
+            </div>
+            {selectedTransfer && (
+              <div className="mt-1.5 rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
+                <div className="flex items-center justify-between font-medium">
+                  <span>{selectedTransfer.transaction_ref}</span>
+                  <span>{selectedTransfer.send_amount} {selectedTransfer.send_currency} → {selectedTransfer.receive_amount} {selectedTransfer.receive_currency}</span>
+                </div>
+                <p className="mt-0.5 text-indigo-500">{selectedTransfer.full_name ?? selectedTransfer.customer_id} → {selectedTransfer.beneficiary_name ?? "Unknown beneficiary"}</p>
+              </div>
+            )}
+            {transferOpen && transferQuery.trim().length >= 3 && (
+              <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-60 overflow-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+                {transferOptions.length > 0 ? (
+                  <div className="divide-y divide-slate-100">
+                    {transferOptions.map((t) => (
+                      <button key={t.id} type="button" onClick={() => onSelectTransfer(t)}
+                              className="w-full px-3 py-2.5 text-left transition hover:bg-slate-50">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-slate-800">{t.transaction_ref}</span>
+                          <span className="text-[10px] font-semibold text-slate-500 capitalize">{t.status}</span>
+                        </div>
+                        <p className="truncate text-xs text-slate-500">
+                          {t.full_name ?? t.customer_id} → {t.beneficiary_name ?? "?"} · {t.send_amount} {t.send_currency}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                ) : !transferLoading ? (
+                  <div className="px-3 py-3 text-sm text-slate-500">No transfers found</div>
+                ) : null}
+              </div>
+            )}
+          </div>
+
+          {/* Title */}
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-slate-600">Title *</label>
+            <input type="text" className={inputCls} value={form.title}
+                   onChange={(e) => setForm({ ...form, title: e.target.value })} />
+          </div>
+
+          {/* Category / Priority */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-slate-600">Category</label>
+              <select className={inputCls} value={form.category}
+                      onChange={(e) => setForm({ ...form, category: e.target.value as TaskCategory })}>
+                <option value="Query">Query</option>
+                <option value="Action">Action</option>
+                <option value="KYC">KYC</option>
+                <option value="Payment_Issue">Payment Issue</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-slate-600">Priority</label>
+              <select className={inputCls} value={form.priority}
+                      onChange={(e) => setForm({ ...form, priority: e.target.value as TaskPriority })}>
+                <option value="Low">Low</option>
+                <option value="Medium">Medium</option>
+                <option value="High">High</option>
+                <option value="Urgent">Urgent</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Status / Assigned */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-slate-600">Status</label>
+              <select className={inputCls} value={form.status}
+                      onChange={(e) => setForm({ ...form, status: e.target.value as Exclude<TaskStatus, "Closed"> })}>
+                <option value="Open">Open</option>
+                <option value="In_Progress">In Progress</option>
+                <option value="Pending">Pending</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-slate-600">Assign to</label>
+              <select className={inputCls} value={form.assigned_agent_id}
+                      onChange={(e) => setForm({ ...form, assigned_agent_id: e.target.value })}>
+                <option value="">Unassigned</option>
+                {agents.map((a) => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-slate-600">Description</label>
+            <textarea className={`${inputCls} resize-none`} rows={3}
+                      value={form.description}
+                      onChange={(e) => setForm({ ...form, description: e.target.value })} />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-1">
+            <button type="button" onClick={onClose}
+                    className="rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50">
+              Cancel
+            </button>
+            <button type="submit" disabled={saving}
+                    className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
+              {saving && <Loader2 size={14} className="animate-spin" />}
+              Save Changes
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ─── CommentsList ──────────────────────────────────────────────────────────────
 
 function CommentsList({ taskId, commentKey }: { taskId: number; commentKey: number }) {
@@ -749,6 +1140,7 @@ export default function ToDoPage() {
   const [search, setSearch]         = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [closeTarget, setCloseTarget] = useState<Task | null>(null);
+  const [editTarget,  setEditTarget]  = useState<Task | null>(null);
   const [agents, setAgents]         = useState<Agent[]>([]);
   const [refreshTick, setRefreshTick] = useState(0);
 
@@ -807,6 +1199,12 @@ export default function ToDoPage() {
   function handleCreated(task: Task) {
     setShowCreate(false);
     // If the new task belongs to the current view, prepend it; otherwise reload
+    setRefreshTick((t) => t + 1);
+  }
+
+  function handleEdited(updated: Task) {
+    setEditTarget(null);
+    setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
     setRefreshTick((t) => t + 1);
   }
 
@@ -906,6 +1304,7 @@ export default function ToDoPage() {
                     key={task.id}
                     task={task}
                     onClose={() => setCloseTarget(task)}
+                    onEdit={() => setEditTarget(task)}
                     onCommentAdded={() => setRefreshTick((t) => t + 1)}
                     onNavigateCustomer={() => router.push(`/customer/${task.customer_id}`)}
                   />
@@ -929,6 +1328,7 @@ export default function ToDoPage() {
                 key={task.id}
                 task={task}
                 onClose={() => setCloseTarget(task)}
+                onEdit={() => setEditTarget(task)}
                 onCommentAdded={() => setRefreshTick((t) => t + 1)}
                 onNavigateCustomer={() => router.push(`/customer/${task.customer_id}`)}
               />
@@ -988,6 +1388,14 @@ export default function ToDoPage() {
           onClosed={handleClosed}
         />
       )}
+      {editTarget && (
+        <EditTaskModal
+          task={editTarget}
+          agents={agents}
+          onClose={() => setEditTarget(null)}
+          onSaved={handleEdited}
+        />
+      )}
     </div>
   );
 }
@@ -997,11 +1405,12 @@ export default function ToDoPage() {
 interface TaskRowProps {
   task: Task;
   onClose: () => void;
+  onEdit: () => void;
   onCommentAdded: () => void;
   onNavigateCustomer: () => void;
 }
 
-function TaskRow({ task, onClose, onCommentAdded, onNavigateCustomer }: TaskRowProps) {
+function TaskRow({ task, onClose, onEdit, onCommentAdded, onNavigateCustomer }: TaskRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [commentKey, setCommentKey] = useState(0);
 
@@ -1043,14 +1452,22 @@ function TaskRow({ task, onClose, onCommentAdded, onNavigateCustomer }: TaskRowP
         <td className="py-3 px-3">{statusBadge(task.status)}</td>
         <td className="py-3 px-3 text-xs text-slate-400 whitespace-nowrap">{formatDate(task.updated_at)}</td>
         <td className="py-3 pl-3 pr-5">
-          {task.status !== "Closed" && (
+          <div className="flex items-center gap-1.5 opacity-0 transition group-hover:opacity-100">
             <button
-              onClick={(e) => { e.stopPropagation(); onClose(); }}
-              className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 opacity-0 transition hover:bg-emerald-100 group-hover:opacity-100"
+              onClick={(e) => { e.stopPropagation(); onEdit(); }}
+              className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100"
             >
-              Close
+              <Pencil size={11} />
             </button>
-          )}
+            {task.status !== "Closed" && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onClose(); }}
+                className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
+              >
+                Close
+              </button>
+            )}
+          </div>
         </td>
       </tr>
       {expanded && (
@@ -1079,7 +1496,7 @@ function TaskRow({ task, onClose, onCommentAdded, onNavigateCustomer }: TaskRowP
 
 // ─── MobileTaskCard ───────────────────────────────────────────────────────────
 
-function MobileTaskCard({ task, onClose, onCommentAdded, onNavigateCustomer }: TaskRowProps) {
+function MobileTaskCard({ task, onClose, onEdit, onCommentAdded, onNavigateCustomer }: TaskRowProps) {
   const [commentKey, setCommentKey] = useState(0);
 
   function handleCommentAdded() {
@@ -1121,16 +1538,24 @@ function MobileTaskCard({ task, onClose, onCommentAdded, onNavigateCustomer }: T
         </a>
       )}
       <CommentsList taskId={task.id} commentKey={commentKey} />
-      <div className="flex items-center gap-3 border-t border-slate-100 pt-2.5">
+      <div className="flex items-center gap-2 border-t border-slate-100 pt-2.5">
         <AddCommentInline taskId={task.id} onAdded={handleCommentAdded} />
-        {task.status !== "Closed" && (
+        <div className="ml-auto flex items-center gap-2">
           <button
-            onClick={onClose}
-            className="ml-auto rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
+            onClick={onEdit}
+            className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100"
           >
-            Close Task
+            <Pencil size={11} />Edit
           </button>
-        )}
+          {task.status !== "Closed" && (
+            <button
+              onClick={onClose}
+              className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
+            >
+              Close
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 import type { Call, Device } from "@twilio/voice-sdk";
 import { apiFetch } from "@/src/lib/apiFetch";
 import { useAuth } from "@/src/context/AuthContext";
+import { logDiagnostic, maskPhoneClient } from "@/src/lib/voiceDiagnosticsClient";
 
 export type CallState = "idle" | "connecting" | "active" | "incoming";
 export type ConnectionState = "starting" | "ready" | "lost" | "mic-blocked";
@@ -77,6 +78,12 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
   const heartbeatIntervalMsRef = useRef(20000);
   const callStateRef = useRef<CallState>("idle");
   const connectionStateRef = useRef<ConnectionState>("starting");
+  const callQualityRef = useRef<{
+    maxRtt: number;
+    maxJitter: number;
+    maxPacketsLost: number;
+    warnings: Array<{ name: string; t: number; data?: unknown }>;
+  }>({ maxRtt: 0, maxJitter: 0, maxPacketsLost: 0, warnings: [] });
 
   const [callState, setCallState] = useState<CallState>("idle");
   const [connectionState, setConnectionState] = useState<ConnectionState>("starting");
@@ -175,11 +182,50 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
 
   function attachCallListeners(call: Call) {
     activeCallRef.current = call;
+    callQualityRef.current = { maxRtt: 0, maxJitter: 0, maxPacketsLost: 0, warnings: [] };
 
     const earlyParams = (call as unknown as { parameters?: Record<string, string> }).parameters;
     if (earlyParams?.CallSid) {
       callSidRef.current = earlyParams.CallSid;
     }
+
+    const callWithEvents = call as unknown as {
+      on: (event: string, handler: (...args: unknown[]) => void) => void;
+    };
+
+    callWithEvents.on("warning", (name: unknown, data: unknown) => {
+      const warningName = typeof name === "string" ? name : String(name);
+      callQualityRef.current.warnings.push({ name: warningName, t: Date.now(), data });
+      logDiagnostic({
+        eventType: "call_warning",
+        severity: "warn",
+        callSid: callSidRef.current,
+        direction: activeCallDirectionRef.current,
+        phoneMasked: maskPhoneClient(activeCallPhoneRef.current),
+        payload: { name: warningName, data },
+      });
+    });
+
+    callWithEvents.on("warning-cleared", (name: unknown) => {
+      const warningName = typeof name === "string" ? name : String(name);
+      logDiagnostic({
+        eventType: "call_warning_cleared",
+        severity: "info",
+        callSid: callSidRef.current,
+        direction: activeCallDirectionRef.current,
+        payload: { name: warningName },
+      });
+    });
+
+    callWithEvents.on("sample", (sample: unknown) => {
+      const s = sample as { rtt?: number; jitter?: number; packetsLost?: number };
+      const q = callQualityRef.current;
+      if (typeof s?.rtt === "number" && s.rtt > q.maxRtt) q.maxRtt = s.rtt;
+      if (typeof s?.jitter === "number" && s.jitter > q.maxJitter) q.maxJitter = s.jitter;
+      if (typeof s?.packetsLost === "number" && s.packetsLost > q.maxPacketsLost) {
+        q.maxPacketsLost = s.packetsLost;
+      }
+    });
 
     call.on("accept", (acceptedCall: Call) => {
       stopRing();
@@ -221,6 +267,22 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
         phone: phoneSnap,
         direction: directionSnap,
       });
+
+      const q = callQualityRef.current;
+      logDiagnostic({
+        eventType: "call_disconnect_summary",
+        severity: "info",
+        callSid: sidSnap,
+        direction: directionSnap,
+        phoneMasked: maskPhoneClient(phoneSnap),
+        payload: {
+          durationSeconds: durationSnap,
+          maxRtt: q.maxRtt,
+          maxJitter: q.maxJitter,
+          maxPacketsLost: q.maxPacketsLost,
+          warnings: q.warnings,
+        },
+      });
     });
 
     call.on("cancel", () => {
@@ -241,6 +303,15 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
       stopRing();
       setConnection("lost", err.message || "Connection Lost");
       updateVoiceAvailability(false, { force: true });
+      logDiagnostic({
+        eventType: "call_error",
+        severity: "error",
+        callSid: callSidRef.current,
+        direction: activeCallDirectionRef.current,
+        phoneMasked: maskPhoneClient(activeCallPhoneRef.current),
+        errorCode: (err as unknown as { code?: number | string }).code ?? null,
+        message: err.message ?? String(err),
+      });
     });
   }
 
@@ -272,6 +343,12 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
       if (tokenData) return tokenData;
       await new Promise((resolve) => setTimeout(resolve, attempt * 750));
     }
+    logDiagnostic({
+      eventType: "token_refresh_failed",
+      severity: "error",
+      callSid: callSidRef.current,
+      message: `Token refresh exhausted after ${attempts} attempts`,
+    });
     return null;
   }, [fetchVoiceToken]);
 
@@ -327,26 +404,44 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
         if (destroyed) return;
         setConnection("lost", "Connection Lost");
         updateVoiceAvailability(false, { force: true });
+        logDiagnostic({
+          eventType: "device_unregistered",
+          severity: "warn",
+          callSid: callSidRef.current,
+        });
       });
 
       device.on("error", (err: Error) => {
         const message = err.message ?? String(err);
-        if (
+        const micBlocked =
           message.includes("NotAllowedError") ||
           message.includes("Permission denied") ||
-          message.includes("PermissionDeniedError")
-        ) {
+          message.includes("PermissionDeniedError");
+        if (micBlocked) {
           setConnection("mic-blocked", "Microphone blocked");
         } else {
           setConnection("lost", message || "Connection Lost");
         }
         updateVoiceAvailability(false, { force: true });
+        logDiagnostic({
+          eventType: "device_error",
+          severity: "error",
+          callSid: callSidRef.current,
+          errorCode: (err as unknown as { code?: number | string }).code ?? null,
+          message,
+          payload: { micBlocked },
+        });
       });
 
       (device as unknown as { on?: (event: string, handler: () => void) => void }).on?.("offline", () => {
         if (destroyed) return;
         setConnection("lost", "Connection Lost");
         updateVoiceAvailability(false, { force: true });
+        logDiagnostic({
+          eventType: "device_offline",
+          severity: "warn",
+          callSid: callSidRef.current,
+        });
       });
 
       device.on("incoming", async (call: Call) => {
@@ -391,11 +486,27 @@ export function TwilioVoiceProvider({ children }: { children: React.ReactNode })
     function handleBrowserOffline() {
       setConnection("lost", "Connection Lost");
       updateVoiceAvailability(false, { force: true });
+      if (callStateRef.current !== "idle" || callSidRef.current) {
+        logDiagnostic({
+          eventType: "browser_offline",
+          severity: "warn",
+          callSid: callSidRef.current,
+          direction: activeCallDirectionRef.current,
+        });
+      }
     }
 
     function handleBrowserOnline() {
       setConnection("starting", "Reconnecting...");
       deviceRef.current?.register();
+      if (callStateRef.current !== "idle" || callSidRef.current) {
+        logDiagnostic({
+          eventType: "browser_online",
+          severity: "info",
+          callSid: callSidRef.current,
+          direction: activeCallDirectionRef.current,
+        });
+      }
     }
 
     if (typeof window !== "undefined") {

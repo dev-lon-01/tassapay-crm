@@ -91,6 +91,7 @@ export async function PATCH(
   try {
     const body = await req.json();
     const {
+      customer_id,
       title,
       description,
       category,
@@ -123,6 +124,13 @@ export async function PATCH(
     const sets: string[] = [];
     const values: (string | number | null)[] = [];
 
+    if (customer_id !== undefined) {
+      if (!customer_id || typeof customer_id !== "string" || !customer_id.trim()) {
+        return NextResponse.json({ error: "customer_id cannot be empty" }, { status: 400 });
+      }
+      sets.push("`customer_id` = ?");
+      values.push(customer_id.trim());
+    }
     if (title !== undefined) {
       if (!title || typeof title !== "string" || !title.trim()) {
         return NextResponse.json({ error: "title cannot be empty" }, { status: 400 });

@@ -12,6 +12,7 @@ import {
   upsertCallInteraction,
   validateTwilioWebhook,
 } from "@/src/lib/voiceCallState";
+import { recordVoiceDiagnostic } from "@/src/lib/voiceDiagnostics";
 
 const { VoiceResponse } = twilio.twiml;
 
@@ -89,6 +90,18 @@ export async function POST(req: NextRequest) {
     const signature = req.headers.get("x-twilio-signature") ?? "";
     const url = buildExpectedWebhookUrl(`${req.nextUrl.pathname}${req.nextUrl.search}`);
     if (!validateTwilioWebhook(signature, url, params)) {
+      recordVoiceDiagnostic({
+        source: "server",
+        eventType: "call_completed_signature_failed",
+        severity: "error",
+        callSid: params.CallSid ?? null,
+        message: "Twilio webhook signature validation failed",
+        payload: {
+          url,
+          host: req.headers.get("host"),
+          hasSignature: Boolean(signature),
+        },
+      });
       return new NextResponse("Forbidden", { status: 403 });
     }
 
@@ -208,6 +221,12 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[POST /api/voice/call-completed]", message);
+    recordVoiceDiagnostic({
+      source: "server",
+      eventType: "call_completed_handler_error",
+      severity: "error",
+      message,
+    });
     return new NextResponse("Internal Server Error", { status: 500 });
   }
 }

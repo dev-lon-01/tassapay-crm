@@ -12,6 +12,7 @@ import {
   validateTwilioWebhook,
 } from "@/src/lib/voiceCallState";
 import { VOICE_AGENT_TTL_SECONDS } from "@/src/lib/voiceRuntime";
+import { recordVoiceDiagnostic } from "@/src/lib/voiceDiagnostics";
 
 const { VoiceResponse } = twilio.twiml;
 
@@ -37,6 +38,20 @@ export async function POST(req: NextRequest) {
     const url = buildExpectedWebhookUrl(`${req.nextUrl.pathname}${req.nextUrl.search}`);
 
     if (!validateTwilioWebhook(signature, url, params)) {
+      recordVoiceDiagnostic({
+        source: "server",
+        eventType: "twiml_signature_failed",
+        severity: "error",
+        callSid: params.CallSid ?? null,
+        message: "Twilio webhook signature validation failed",
+        payload: {
+          url,
+          host: req.headers.get("host"),
+          hasSignature: Boolean(signature),
+          from: params.From ?? null,
+          to: params.To ?? null,
+        },
+      });
       return new NextResponse("Forbidden", { status: 403 });
     }
 
@@ -203,6 +218,12 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[POST /api/voice/twiml]", message);
+    recordVoiceDiagnostic({
+      source: "server",
+      eventType: "twiml_handler_error",
+      severity: "error",
+      message,
+    });
     return new NextResponse("Internal Server Error", { status: 500 });
   }
 }

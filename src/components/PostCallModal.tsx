@@ -185,10 +185,6 @@ export function PostCallModal() {
   // â”€â”€ Save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function handleSave() {
     if (!lastEndedCall || outcome === OUTCOMES[0]) return;
-    if (!interactionId && !lastEndedCall.callSid) {
-      setError("Call log is still being created. Please try again in a moment.");
-      return;
-    }
     if (!resolvedCustomerId) {
       setError("Please select a customer before saving.");
       return;
@@ -196,16 +192,25 @@ export function PostCallModal() {
     setSaving(true);
     setError(null);
     try {
+      const canPatchServerLog = Boolean(interactionId || lastEndedCall.callSid);
       const res = await apiFetch("/api/interactions", {
-        method: "PATCH",
+        method: canPatchServerLog ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: JSON.stringify(canPatchServerLog ? {
           id:                    interactionId,
           customerId:            resolvedCustomerId,
           outcome,
           note:                  note.trim() || null,
           twilio_call_sid:       lastEndedCall.callSid,
           call_duration_seconds: lastEndedCall.durationSeconds,
+        } : {
+          customerId:            resolvedCustomerId,
+          type:                  "Call",
+          outcome,
+          note:                  note.trim() || "Call attempt did not create a Twilio server-side call log.",
+          twilio_call_sid:       null,
+          call_duration_seconds: lastEndedCall.durationSeconds,
+          call_status:           lastEndedCall.durationSeconds > 0 ? "completed" : "failed",
         }),
       });
       if (!res.ok) {
@@ -281,7 +286,7 @@ export function PostCallModal() {
 
           {callLogStatus === "missing" && (
             <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
-              Waiting for the server-side call log. Please try again in a few seconds.
+              Server-side call log was not found yet. Select a customer and save to log this call attempt manually.
             </div>
           )}
 
@@ -407,6 +412,5 @@ export function PostCallModal() {
     </div>
   );
 }
-
 
 
