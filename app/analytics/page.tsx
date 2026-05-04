@@ -9,6 +9,9 @@ import {
   DollarSign,
   Loader2,
   AlertCircle,
+  ClipboardList,
+  CheckSquare,
+  MessageSquare,
 } from "lucide-react";
 import {
   BarChart,
@@ -27,6 +30,9 @@ interface Summary {
   totalActivities:     number;
   kycConversions:      number;
   transferConversions: number;
+  tasksCreated:        number;
+  tasksClosed:         number;
+  taskComments:        number;
 }
 
 interface AgentRow {
@@ -35,6 +41,9 @@ interface AgentRow {
   totalActivities:     number;
   kycConversions:      number;
   transferConversions: number;
+  tasksCreated:        number;
+  tasksClosed:         number;
+  taskComments:        number;
 }
 
 // ─── date-range helpers ───────────────────────────────────────────────────────
@@ -223,7 +232,7 @@ function AnalyticsDashboard() {
       )}
 
       {/* ── metric cards ── */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <MetricCard
           label="Total Interactions"
           value={summary?.totalActivities}
@@ -247,6 +256,30 @@ function AnalyticsDashboard() {
           icon={<DollarSign className="h-5 w-5 text-purple-600" />}
           colorClass="bg-purple-50"
           textClass="text-purple-700"
+        />
+        <MetricCard
+          label="Tasks Created"
+          value={summary?.tasksCreated}
+          loading={loadingSummary}
+          icon={<ClipboardList className="h-5 w-5 text-sky-600" />}
+          colorClass="bg-sky-50"
+          textClass="text-sky-700"
+        />
+        <MetricCard
+          label="Tasks Closed"
+          value={summary?.tasksClosed}
+          loading={loadingSummary}
+          icon={<CheckSquare className="h-5 w-5 text-teal-600" />}
+          colorClass="bg-teal-50"
+          textClass="text-teal-700"
+        />
+        <MetricCard
+          label="Task Comments"
+          value={summary?.taskComments}
+          loading={loadingSummary}
+          icon={<MessageSquare className="h-5 w-5 text-amber-600" />}
+          colorClass="bg-amber-50"
+          textClass="text-amber-700"
         />
       </div>
 
@@ -317,6 +350,9 @@ function AnalyticsDashboard() {
                     <th className="px-5 py-3 text-right">Activities</th>
                     <th className="px-5 py-3 text-right">KYC</th>
                     <th className="px-5 py-3 text-right">Transfers</th>
+                    <th className="px-5 py-3 text-right">Tasks +</th>
+                    <th className="px-5 py-3 text-right">Tasks ✓</th>
+                    <th className="px-5 py-3 text-right">Comments</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -345,6 +381,15 @@ function AnalyticsDashboard() {
                         <span className="rounded-full bg-purple-50 px-2 py-0.5 text-xs font-semibold text-purple-700">
                           {agent.transferConversions}
                         </span>
+                      </td>
+                      <td className="px-5 py-3 text-right tabular-nums text-sky-700">
+                        {agent.tasksCreated.toLocaleString()}
+                      </td>
+                      <td className="px-5 py-3 text-right tabular-nums text-teal-700">
+                        {agent.tasksClosed.toLocaleString()}
+                      </td>
+                      <td className="px-5 py-3 text-right tabular-nums text-amber-700">
+                        {agent.taskComments.toLocaleString()}
                       </td>
                     </tr>
                   ))}

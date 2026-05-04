@@ -162,6 +162,12 @@ export async function PATCH(
       }
       sets.push("`status` = ?");
       values.push(status);
+      if (status === "Closed") {
+        sets.push("`closed_by` = ?", "`closed_at` = NOW()");
+        values.push(auth.id);
+      } else {
+        sets.push("`closed_by` = NULL", "`closed_at` = NULL");
+      }
     }
     if (assigned_agent_id !== undefined) {
       sets.push("`assigned_agent_id` = ?");
@@ -190,7 +196,7 @@ export async function PATCH(
     // Auto-insert resolution comment when closing
     if (status === "Closed" && resolution_comment?.trim()) {
       await pool.execute(
-        `INSERT INTO task_comments (task_id, agent_id, comment) VALUES (?, ?, ?)`,
+        `INSERT INTO task_comments (task_id, agent_id, comment, kind) VALUES (?, ?, ?, 'close_resolution')`,
         [taskId, auth.id, resolution_comment.trim()]
       );
     }

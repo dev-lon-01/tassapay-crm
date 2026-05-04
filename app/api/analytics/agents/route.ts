@@ -68,18 +68,47 @@ export async function GET(req: NextRequest) {
           FROM   transfers t
           WHERE  t.attributed_agent_id = u.id
             AND  t.created_at BETWEEN ? AND ?
-        ) AS transferConversions
+        ) AS transferConversions,
+
+        /* Tasks created by this agent in the range */
+        (
+          SELECT COUNT(*)
+          FROM   tasks tc
+          WHERE  tc.created_by = u.id
+            AND  tc.created_at BETWEEN ? AND ?
+        ) AS tasksCreated,
+
+        /* Tasks closed by this agent in the range */
+        (
+          SELECT COUNT(*)
+          FROM   tasks tcl
+          WHERE  tcl.closed_by = u.id
+            AND  tcl.closed_at BETWEEN ? AND ?
+        ) AS tasksClosed,
+
+        /* User comments authored by this agent in the range
+           (excludes the auto-generated close_resolution row) */
+        (
+          SELECT COUNT(*)
+          FROM   task_comments tcm
+          WHERE  tcm.agent_id   = u.id
+            AND  tcm.kind       = 'user'
+            AND  tcm.created_at BETWEEN ? AND ?
+        ) AS taskComments
 
       FROM users u
       WHERE u.role = 'Agent'
       ORDER BY transferConversions DESC, kycConversions DESC, totalActivities DESC
     `;
 
-    // 2 params per subquery × 3 subqueries = 6 total
+    // 2 params per subquery × 6 subqueries = 12 total
     const params = [
       startStr, endStr,  // totalActivities
       startStr, endStr,  // kycConversions
       startStr, endStr,  // transferConversions
+      startStr, endStr,  // tasksCreated
+      startStr, endStr,  // tasksClosed
+      startStr, endStr,  // taskComments
     ];
 
     const [rows] = await pool.execute<RowDataPacket[]>(sql, params);

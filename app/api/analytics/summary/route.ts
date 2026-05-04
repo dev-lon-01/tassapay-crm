@@ -39,7 +39,14 @@ export async function GET(req: NextRequest) {
     const startStr = `${startDate} 00:00:00`;
     const endStr   = `${endDate} 23:59:59`;
 
-    const [[activities], [kyc], [transfers]] = await Promise.all([
+    const [
+      [activities],
+      [kyc],
+      [transfers],
+      [tasksCreated],
+      [tasksClosed],
+      [taskComments],
+    ] = await Promise.all([
       pool.execute<RowDataPacket[]>(
         `SELECT COUNT(*) AS total FROM interactions WHERE created_at BETWEEN ? AND ?`,
         [startStr, endStr]
@@ -54,12 +61,28 @@ export async function GET(req: NextRequest) {
          WHERE created_at BETWEEN ? AND ?`,
         [startStr, endStr]
       ),
+      pool.execute<RowDataPacket[]>(
+        `SELECT COUNT(*) AS total FROM tasks WHERE created_at BETWEEN ? AND ?`,
+        [startStr, endStr]
+      ),
+      pool.execute<RowDataPacket[]>(
+        `SELECT COUNT(*) AS total FROM tasks WHERE closed_at BETWEEN ? AND ?`,
+        [startStr, endStr]
+      ),
+      pool.execute<RowDataPacket[]>(
+        `SELECT COUNT(*) AS total FROM task_comments
+         WHERE kind = 'user' AND created_at BETWEEN ? AND ?`,
+        [startStr, endStr]
+      ),
     ]);
 
     return NextResponse.json({
       totalActivities:      Number((activities[0] as RowDataPacket).total),
       kycConversions:       Number((kyc[0] as RowDataPacket).total),
       transferConversions:  Number((transfers[0] as RowDataPacket).total),
+      tasksCreated:         Number((tasksCreated[0] as RowDataPacket).total),
+      tasksClosed:          Number((tasksClosed[0] as RowDataPacket).total),
+      taskComments:         Number((taskComments[0] as RowDataPacket).total),
       startDate,
       endDate,
     });

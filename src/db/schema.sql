@@ -470,6 +470,8 @@ CREATE TABLE IF NOT EXISTS `tasks` (
   `category`          ENUM('Query','Action','KYC','Payment_Issue') NOT NULL DEFAULT 'Query',
   `priority`          ENUM('Low','Medium','High','Urgent')          NOT NULL DEFAULT 'Medium',
   `status`            ENUM('Open','In_Progress','Pending','Closed') NOT NULL DEFAULT 'Open',
+  `closed_by`         INT           DEFAULT NULL,                      -- FK → users.id  (set when status flips to Closed)
+  `closed_at`         DATETIME      DEFAULT NULL,
   `assigned_agent_id` INT           DEFAULT NULL,                      -- FK → users.id  (NULL = unassigned)
   `created_by`        INT           NOT NULL,                          -- FK → users.id
   `created_at`        TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -484,11 +486,16 @@ CREATE TABLE IF NOT EXISTS `tasks` (
   CONSTRAINT `fk_tasks_created_by`
     FOREIGN KEY (`created_by`) REFERENCES `users` (`id`)
     ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_tasks_closed_by`
+    FOREIGN KEY (`closed_by`) REFERENCES `users` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE,
   INDEX `idx_tasks_customer`       (`customer_id`),
   INDEX `idx_tasks_assigned_agent` (`assigned_agent_id`),
   INDEX `idx_tasks_status`         (`status`),
   INDEX `idx_tasks_priority`       (`priority`),
-  INDEX `idx_tasks_created_at`     (`created_at`)
+  INDEX `idx_tasks_created_at`     (`created_at`),
+  INDEX `idx_tasks_closed_at`      (`closed_at`),
+  INDEX `idx_tasks_closed_by`      (`closed_by`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ─── task_comments (action log per task) ──────────────────────────────────────
@@ -498,6 +505,7 @@ CREATE TABLE IF NOT EXISTS `task_comments` (
   `task_id`    INT       NOT NULL,             -- FK → tasks.id
   `agent_id`   INT       NOT NULL,             -- FK → users.id
   `comment`    TEXT      NOT NULL,
+  `kind`       ENUM('user','close_resolution') NOT NULL DEFAULT 'user',
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   CONSTRAINT `fk_task_comments_task`
@@ -507,5 +515,6 @@ CREATE TABLE IF NOT EXISTS `task_comments` (
     FOREIGN KEY (`agent_id`) REFERENCES `users` (`id`)
     ON DELETE RESTRICT ON UPDATE CASCADE,
   INDEX `idx_task_comments_task`  (`task_id`),
-  INDEX `idx_task_comments_agent` (`agent_id`)
+  INDEX `idx_task_comments_agent` (`agent_id`),
+  INDEX `idx_task_comments_kind_created` (`kind`, `created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

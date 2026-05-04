@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
-import { Activity, Loader2, Phone, MessageSquare, FileText, Globe, ChevronDown, PlayCircle, User, CalendarDays, BarChart3, Rows3 } from "lucide-react";
+import { Activity, Loader2, Phone, MessageSquare, FileText, Globe, ChevronDown, PlayCircle, User, CalendarDays, BarChart3, Rows3, ClipboardList, CheckSquare, MessageCircle } from "lucide-react";
 import { apiFetch } from "@/src/lib/apiFetch";
 import { useAuth } from "@/src/context/AuthContext";
 import { IndependentDialer } from "@/src/components/IndependentDialer";
@@ -10,9 +10,12 @@ import Link from "next/link";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+type ActivitySource = "interaction" | "task_created" | "task_closed" | "task_comment";
+
 interface ActivityEntry {
   id:                    number;
-  type:                  string;
+  source:                ActivitySource;
+  type:                  string | null;
   outcome:               string | null;
   note:                  string | null;
   created_at:            string;
@@ -25,6 +28,8 @@ interface ActivityEntry {
   metadata:              string | null;
   customer_id:           string | null;
   recording_url:         string | null;
+  task_id:               number | null;
+  task_title:            string | null;
 }
 
 interface AgentOption {
@@ -43,6 +48,9 @@ interface ActivityReportRow {
   sms: number;
   notes: number;
   emails: number;
+  tasks_created: number;
+  tasks_closed: number;
+  task_comments: number;
   unique_customers: number;
   total_call_time: string | null;
   connected_calls: number;
@@ -102,6 +110,13 @@ const TYPE_COLORS: Record<string, string> = {
   Email:  "bg-cyan-500",
   Note:   "bg-amber-400",
   System: "bg-slate-300",
+};
+
+const SOURCE_DOT_COLOR: Record<ActivitySource, string> = {
+  interaction:   "bg-slate-300",
+  task_created:  "bg-sky-500",
+  task_closed:   "bg-teal-500",
+  task_comment:  "bg-amber-500",
 };
 
 const TYPE_TABS: { key: TypeFilter; label: string; icon: React.ReactNode }[] = [
@@ -457,13 +472,87 @@ export default function ActivityPage() {
         ) : (
           <div className="px-5 py-4">
             <ol className="relative border-l border-slate-100">
-              {entries.map((entry) => (
-                <li key={entry.id} className="mb-6 ml-4 last:mb-0">
+              {entries.map((entry) => {
+                const dotColor =
+                  entry.source && entry.source !== "interaction"
+                    ? SOURCE_DOT_COLOR[entry.source]
+                    : (TYPE_COLORS[entry.type ?? ""] ?? "bg-slate-300");
+                const isTaskEvent = entry.source && entry.source !== "interaction";
+                const taskKey = `${entry.source}-${entry.id}`;
+                return (
+                <li key={isTaskEvent ? taskKey : entry.id} className="mb-6 ml-4 last:mb-0">
                   {/* Timeline dot */}
                   <span
-                    className={`absolute -left-1.5 mt-1 h-3 w-3 rounded-full border-2 border-white ${TYPE_COLORS[entry.type] ?? "bg-slate-300"}`}
+                    className={`absolute -left-1.5 mt-1 h-3 w-3 rounded-full border-2 border-white ${dotColor}`}
                   />
 
+                  {isTaskEvent ? (
+                    <div className="flex flex-col gap-0.5">
+                      <p className="text-sm text-slate-800">
+                        <span className="font-semibold text-slate-900">
+                          {entry.agent_name ?? "Unknown agent"}
+                        </span>{" "}
+                        {entry.source === "task_created" && (
+                          <>
+                            <span className="inline-flex items-center gap-1 font-semibold text-sky-700">
+                              <ClipboardList size={12} /> created a task
+                            </span>
+                          </>
+                        )}
+                        {entry.source === "task_closed" && (
+                          <>
+                            <span className="inline-flex items-center gap-1 font-semibold text-teal-700">
+                              <CheckSquare size={12} /> closed a task
+                            </span>
+                          </>
+                        )}
+                        {entry.source === "task_comment" && (
+                          <>
+                            <span className="inline-flex items-center gap-1 font-semibold text-amber-700">
+                              <MessageCircle size={12} /> commented on a task
+                            </span>
+                          </>
+                        )}
+                        {entry.customer_name && (
+                          <>
+                            {" "}for{" "}
+                            {entry.customer_id ? (
+                              <Link href={`/customer/${entry.customer_id}`} className="font-semibold text-indigo-700 hover:underline">
+                                {entry.customer_name}
+                              </Link>
+                            ) : (
+                              <span className="font-semibold text-slate-900">{entry.customer_name}</span>
+                            )}
+                          </>
+                        )}
+                        {entry.customer_country && (
+                          <span className="ml-1 text-xs text-slate-400">
+                            ({entry.customer_country})
+                          </span>
+                        )}
+                      </p>
+
+                      {(entry.task_title || entry.note) && (
+                        <p className="text-xs text-slate-500 line-clamp-2">
+                          {entry.task_id && (
+                            <Link href={`/to-do?taskId=${entry.task_id}`} className="font-medium text-slate-600 hover:underline">
+                              #{entry.task_id}
+                            </Link>
+                          )}
+                          {entry.task_title && (
+                            <span className="font-medium text-slate-600"> {entry.task_title}</span>
+                          )}
+                          {entry.source === "task_comment" && entry.note && (
+                            <span className="text-slate-500"> — {entry.note}</span>
+                          )}
+                        </p>
+                      )}
+
+                      <time className="text-[11px] text-slate-400">
+                        {timeAgo(entry.created_at)}
+                      </time>
+                    </div>
+                  ) : (
                   <div className="flex flex-col gap-0.5">
                     <p className="text-sm text-slate-800">
                       <span className="font-semibold text-slate-900">
@@ -535,8 +624,10 @@ export default function ActivityPage() {
                       {timeAgo(entry.created_at)}
                     </time>
                   </div>
+                  )}
                 </li>
-              ))}
+                );
+              })}
             </ol>
 
             {/* Load More */}
@@ -597,6 +688,9 @@ export default function ActivityPage() {
                     <th className="px-4 py-3 text-right font-semibold">SMS</th>
                     <th className="px-4 py-3 text-right font-semibold">Notes</th>
                     <th className="px-4 py-3 text-right font-semibold">Emails</th>
+                    <th className="px-4 py-3 text-right font-semibold">Tasks +</th>
+                    <th className="px-4 py-3 text-right font-semibold">Tasks ✓</th>
+                    <th className="px-4 py-3 text-right font-semibold">Comments</th>
                     <th className="px-4 py-3 text-right font-semibold">Customers</th>
                     <th className="px-4 py-3 text-left font-semibold">Call Time</th>
                     <th className="px-4 py-3 text-right font-semibold">Connected</th>
@@ -617,6 +711,9 @@ export default function ActivityPage() {
                       <td className="whitespace-nowrap px-4 py-3 text-right">{row.sms.toLocaleString()}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-right">{row.notes.toLocaleString()}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-right">{row.emails.toLocaleString()}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-right text-sky-700">{row.tasks_created.toLocaleString()}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-right text-teal-700">{row.tasks_closed.toLocaleString()}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-right text-amber-700">{row.task_comments.toLocaleString()}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-right">{row.unique_customers.toLocaleString()}</td>
                       <td className="whitespace-nowrap px-4 py-3">{row.total_call_time ?? "-"}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-right">{row.connected_calls.toLocaleString()}</td>

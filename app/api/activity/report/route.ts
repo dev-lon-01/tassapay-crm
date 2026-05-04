@@ -15,6 +15,9 @@ interface ActivityReportRow extends RowDataPacket {
   sms: number;
   notes: number;
   emails: number;
+  tasks_created: number;
+  tasks_closed: number;
+  task_comments: number;
   unique_customers: number;
   total_call_time: string | null;
   connected_calls: number;
@@ -44,8 +47,9 @@ function getDefaultRange(): { from: string; to: string } {
 /**
  * GET /api/activity/report
  *
- * Returns a daily activity summary report derived from interactions, using the
- * same gap-based active time logic as the ad-hoc SQL report.
+ * Daily per-agent activity summary across interactions AND task events
+ * (created / closed / commented). Task events feed into the same gap
+ * heuristic for active-working-time, so closing a ticket counts as work.
  *
  * Query params:
  *   ?region=UK|EU
@@ -107,40 +111,102 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const fenceClause = fence ? `AND (c.country IN (${fence.params.map(() => "?").join(",")}) OR i.customer_id IS NULL)` : "";
+    const fenceCols = fence ? `(${fence.params.map(() => "?").join(",")})` : "";
     const fenceParams = fence?.params ?? [];
+    const interactionFenceClause = fence
+      ? `AND (c.country IN ${fenceCols} OR i.customer_id IS NULL)`
+      : "";
+    const taskFenceClause = fence ? `AND c.country IN ${fenceCols}` : "";
 
     const [rows] = await pool.execute<ActivityReportRow[]>(
-      `WITH ordered AS (
+      `WITH events AS (
          SELECT
-           DATE(i.created_at) AS day,
-           i.created_at AS ts,
-           i.type,
-           i.call_duration_seconds,
-           i.customer_id,
-           i.agent_id,
-           u.name AS agent_name,
-           LAG(i.created_at) OVER (
-             PARTITION BY DATE(i.created_at)
-             ORDER BY i.created_at
-           ) AS prev_ts
+           DATE(i.created_at)        AS day,
+           i.created_at              AS ts,
+           i.type                    AS interaction_type,
+           i.call_duration_seconds   AS call_duration_seconds,
+           i.customer_id             AS customer_id,
+           i.agent_id                AS agent_id,
+           u.name                    AS agent_name,
+           'interaction'             AS source
          FROM interactions i
          LEFT JOIN customers c ON c.customer_id = i.customer_id
-         LEFT JOIN users u ON u.id = i.agent_id
+         LEFT JOIN users u     ON u.id = i.agent_id
          WHERE i.agent_id = ?
            AND i.created_at >= ?
            AND i.created_at < DATE_ADD(?, INTERVAL 1 DAY)
-           ${fenceClause}
+           ${interactionFenceClause}
+
+         UNION ALL
+
+         SELECT
+           DATE(t.created_at)  AS day,
+           t.created_at        AS ts,
+           NULL                AS interaction_type,
+           NULL                AS call_duration_seconds,
+           t.customer_id       AS customer_id,
+           t.created_by        AS agent_id,
+           u.name              AS agent_name,
+           'task_created'      AS source
+         FROM tasks t
+         LEFT JOIN customers c ON c.customer_id = t.customer_id
+         LEFT JOIN users u     ON u.id = t.created_by
+         WHERE t.created_by = ?
+           AND t.created_at >= ?
+           AND t.created_at < DATE_ADD(?, INTERVAL 1 DAY)
+           ${taskFenceClause}
+
+         UNION ALL
+
+         SELECT
+           DATE(t.closed_at)   AS day,
+           t.closed_at         AS ts,
+           NULL                AS interaction_type,
+           NULL                AS call_duration_seconds,
+           t.customer_id       AS customer_id,
+           t.closed_by         AS agent_id,
+           u.name              AS agent_name,
+           'task_closed'       AS source
+         FROM tasks t
+         LEFT JOIN customers c ON c.customer_id = t.customer_id
+         LEFT JOIN users u     ON u.id = t.closed_by
+         WHERE t.closed_by = ?
+           AND t.closed_at IS NOT NULL
+           AND t.closed_at >= ?
+           AND t.closed_at < DATE_ADD(?, INTERVAL 1 DAY)
+           ${taskFenceClause}
+
+         UNION ALL
+
+         SELECT
+           DATE(tc.created_at) AS day,
+           tc.created_at       AS ts,
+           NULL                AS interaction_type,
+           NULL                AS call_duration_seconds,
+           t.customer_id       AS customer_id,
+           tc.agent_id         AS agent_id,
+           u.name              AS agent_name,
+           'task_comment'      AS source
+         FROM task_comments tc
+         JOIN tasks t          ON t.id = tc.task_id
+         LEFT JOIN customers c ON c.customer_id = t.customer_id
+         LEFT JOIN users u     ON u.id = tc.agent_id
+         WHERE tc.agent_id = ?
+           AND tc.kind = 'user'
+           AND tc.created_at >= ?
+           AND tc.created_at < DATE_ADD(?, INTERVAL 1 DAY)
+           ${taskFenceClause}
+       ),
+       ordered AS (
+         SELECT
+           events.*,
+           LAG(ts) OVER (PARTITION BY day ORDER BY ts) AS prev_ts
+         FROM events
        ),
        gaps AS (
          SELECT
-           day,
-           ts,
-           type,
-           call_duration_seconds,
-           customer_id,
-           agent_id,
-           agent_name,
+           day, ts, interaction_type, call_duration_seconds,
+           customer_id, agent_id, agent_name, source,
            TIMESTAMPDIFF(SECOND, prev_ts, ts) AS gap_seconds,
            CASE
              WHEN prev_ts IS NULL THEN 0
@@ -156,21 +222,33 @@ export async function GET(req: NextRequest) {
          TIME_FORMAT(TIMEDIFF(MAX(ts), MIN(ts)), '%H:%i:%s') AS wall_clock_span,
          TIME_FORMAT(SEC_TO_TIME(SUM(active_seconds)), '%H:%i:%s') AS active_working_time,
          COUNT(*) AS total_activities,
-         SUM(type = 'Call') AS calls,
-         SUM(type = 'SMS') AS sms,
-         SUM(type = 'Note') AS notes,
-         SUM(type = 'Email') AS emails,
+         SUM(interaction_type = 'Call')  AS calls,
+         SUM(interaction_type = 'SMS')   AS sms,
+         SUM(interaction_type = 'Note')  AS notes,
+         SUM(interaction_type = 'Email') AS emails,
+         SUM(source = 'task_created')    AS tasks_created,
+         SUM(source = 'task_closed')     AS tasks_closed,
+         SUM(source = 'task_comment')    AS task_comments,
          COUNT(DISTINCT customer_id) AS unique_customers,
          TIME_FORMAT(SEC_TO_TIME(SUM(COALESCE(call_duration_seconds, 0))), '%H:%i:%s') AS total_call_time,
-         SUM(CASE WHEN type = 'Call' AND call_duration_seconds > 0 THEN 1 ELSE 0 END) AS connected_calls,
-         SUM(CASE WHEN type = 'Call' AND COALESCE(call_duration_seconds, 0) = 0 THEN 1 ELSE 0 END) AS no_answer_calls,
+         SUM(CASE WHEN interaction_type = 'Call' AND call_duration_seconds > 0 THEN 1 ELSE 0 END) AS connected_calls,
+         SUM(CASE WHEN interaction_type = 'Call' AND COALESCE(call_duration_seconds, 0) = 0 THEN 1 ELSE 0 END) AS no_answer_calls,
          SUM(CASE WHEN gap_seconds > 1800 THEN 1 ELSE 0 END) AS session_breaks,
          MAX(agent_id) AS agent_id,
          MAX(agent_name) AS agent_name
        FROM gaps
        GROUP BY day
        ORDER BY day ASC`,
-      [agentId, from, to, ...fenceParams],
+      [
+        // interactions branch
+        agentId, from, to, ...fenceParams,
+        // task_created branch
+        agentId, from, to, ...fenceParams,
+        // task_closed branch
+        agentId, from, to, ...fenceParams,
+        // task_comment branch
+        agentId, from, to, ...fenceParams,
+      ],
     );
 
     return NextResponse.json(rows);
