@@ -64,6 +64,8 @@ export async function GET(req: NextRequest) {
         conditions.push("t.status = 'Deposited'");
       } else if (status === "action-required") {
         conditions.push("t.status = 'Pending'");
+      } else if (status === "all") {
+        // intentional no-op: caller wants every status (used by to-do autocomplete)
       }
 
       if (country) {
