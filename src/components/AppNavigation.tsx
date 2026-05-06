@@ -4,7 +4,7 @@ import { useState, type ComponentType } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  ArrowLeftRight, Award, BarChart2, Bell, Bot, CheckSquare, ClipboardList, CreditCard, FileText,
+  ArrowLeftRight, Award, Banknote, BarChart2, Bell, Bot, CheckSquare, ClipboardList, CreditCard, FileText,
   LayoutDashboard, ListFilter, LogOut, Menu, RefreshCw, Activity,
   ShieldAlert, Users, UsersRound, X, UserPlus, Scale,
 } from "lucide-react";
@@ -39,6 +39,10 @@ const adminItems: NavItem[] = [
   { label: "Team",         href: "/team",                            icon: UsersRound  },
   { label: "Sync",         href: "/sync",                            icon: RefreshCw   },
   { label: "Alerts",       href: "/settings/alerts",                 icon: Bell        },
+];
+
+const managerItems: NavItem[] = [
+  { label: "Revenue Rescue", href: "/revenue-rescue", icon: Banknote },
 ];
 
 // Rule of 4: only 3 primary links + "More" button on mobile
@@ -143,18 +147,39 @@ export function AppNavigation() {
             <div className="flex-1 space-y-1 overflow-y-auto px-3 py-3">
               {/* Dashboard - only visible to Admin or users with can_view_dashboard */}
               {(user?.role === "Admin" || user?.can_view_dashboard) && (
-                <Link
-                  href="/dashboard"
-                  onClick={() => setDrawerOpen(false)}
-                  className={`flex items-center gap-4 rounded-2xl px-4 py-3.5 text-sm font-medium transition ${
-                    pathname === "/dashboard"
-                      ? "bg-gradient-to-r from-emerald-50 to-cyan-50 text-emerald-700 ring-1 ring-emerald-100"
-                      : "text-slate-700 hover:bg-slate-50"
-                  }`}
-                >
-                  <LayoutDashboard className="h-5 w-5 text-slate-400" />
-                  <span>Dashboard</span>
-                </Link>
+                <>
+                  <Link
+                    href="/dashboard"
+                    onClick={() => setDrawerOpen(false)}
+                    className={`flex items-center gap-4 rounded-2xl px-4 py-3.5 text-sm font-medium transition ${
+                      pathname === "/dashboard"
+                        ? "bg-gradient-to-r from-emerald-50 to-cyan-50 text-emerald-700 ring-1 ring-emerald-100"
+                        : "text-slate-700 hover:bg-slate-50"
+                    }`}
+                  >
+                    <LayoutDashboard className="h-5 w-5 text-slate-400" />
+                    <span>Dashboard</span>
+                  </Link>
+                  {managerItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = pathname === item.href;
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={() => setDrawerOpen(false)}
+                        className={`flex items-center gap-4 rounded-2xl px-4 py-3.5 text-sm font-medium transition ${
+                          isActive
+                            ? "bg-gradient-to-r from-emerald-50 to-cyan-50 text-emerald-700 ring-1 ring-emerald-100"
+                            : "text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        <Icon className="h-5 w-5 text-slate-400" />
+                        <span>{item.label}</span>
+                      </Link>
+                    );
+                  })}
+                </>
               )}
               {drawerItems.map((item) => {
                 const Icon = item.icon;
@@ -230,17 +255,37 @@ export function AppNavigation() {
             </p>
             {/* Dashboard - only visible to Admin or users with can_view_dashboard */}
             {(user?.role === "Admin" || user?.can_view_dashboard) && (
-              <Link
-                href="/dashboard"
-                className={`group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition ${
-                  pathname === "/dashboard"
-                    ? "bg-gradient-to-r from-emerald-50 to-cyan-50 text-emerald-700 ring-1 ring-emerald-100"
-                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                }`}
-              >
-                <LayoutDashboard className="h-4 w-4 transition group-hover:scale-105" />
-                <span>Dashboard</span>
-              </Link>
+              <>
+                <Link
+                  href="/dashboard"
+                  className={`group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition ${
+                    pathname === "/dashboard"
+                      ? "bg-gradient-to-r from-emerald-50 to-cyan-50 text-emerald-700 ring-1 ring-emerald-100"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                  }`}
+                >
+                  <LayoutDashboard className="h-4 w-4 transition group-hover:scale-105" />
+                  <span>Dashboard</span>
+                </Link>
+                {managerItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = pathname === item.href;
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={`group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition ${
+                        isActive
+                          ? "bg-gradient-to-r from-emerald-50 to-cyan-50 text-emerald-700 ring-1 ring-emerald-100"
+                          : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                      }`}
+                    >
+                      <Icon className="h-4 w-4 transition group-hover:scale-105" />
+                      <span>{item.label}</span>
+                    </Link>
+                  );
+                })}
+              </>
             )}
             {navItems.map((item) => {
               const Icon = item.icon;
