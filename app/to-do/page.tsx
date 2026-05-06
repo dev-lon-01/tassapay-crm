@@ -216,7 +216,7 @@ function CreateTaskModal({ agents, onClose, onCreated }: CreateTaskModalProps) {
     transferDebounceRef.current = setTimeout(async () => {
       setTransferLoading(true);
       try {
-        const r = await apiFetch(`/api/transfers?search=${encodeURIComponent(q)}&page=1&limit=8`);
+        const r = await apiFetch(`/api/transfers?search=${encodeURIComponent(q)}&page=1&limit=8&status=all`);
         const d = await r.json();
         setTransferOptions(Array.isArray(d.data) ? d.data : []);
       } catch { setTransferOptions([]); }
@@ -755,7 +755,7 @@ function EditTaskModal({ task, agents, onClose, onSaved }: EditTaskModalProps) {
     transferDebounceRef.current = setTimeout(async () => {
       setTransferLoading(true);
       try {
-        const r = await apiFetch(`/api/transfers?search=${encodeURIComponent(q)}&page=1&limit=8`);
+        const r = await apiFetch(`/api/transfers?search=${encodeURIComponent(q)}&page=1&limit=8&status=all`);
         const d = await r.json();
         setTransferOptions(Array.isArray(d.data) ? d.data : []);
       } catch { setTransferOptions([]); }
