@@ -503,9 +503,12 @@ CREATE TABLE IF NOT EXISTS `tasks` (
 CREATE TABLE IF NOT EXISTS `task_comments` (
   `id`         INT       NOT NULL AUTO_INCREMENT,
   `task_id`    INT       NOT NULL,             -- FK → tasks.id
-  `agent_id`   INT       NOT NULL,             -- FK → users.id
+  `agent_id`   INT       NULL,                  -- FK → users.id (NULL for system/inbound)
   `comment`    TEXT      NOT NULL,
   `kind`       ENUM('user','close_resolution') NOT NULL DEFAULT 'user',
+  `source`     ENUM('Agent','WhatsApp','SMS','Email','System') NOT NULL DEFAULT 'Agent',
+  `media_url`  VARCHAR(1024) NULL,
+  `external_message_id` VARCHAR(128) NULL,      -- e.g. WhatsApp WAMID for dedup
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   CONSTRAINT `fk_task_comments_task`
@@ -514,7 +517,36 @@ CREATE TABLE IF NOT EXISTS `task_comments` (
   CONSTRAINT `fk_task_comments_agent`
     FOREIGN KEY (`agent_id`) REFERENCES `users` (`id`)
     ON DELETE RESTRICT ON UPDATE CASCADE,
+  UNIQUE KEY `uq_task_comments_external_msg` (`external_message_id`),
   INDEX `idx_task_comments_task`  (`task_id`),
   INDEX `idx_task_comments_agent` (`agent_id`),
-  INDEX `idx_task_comments_kind_created` (`kind`, `created_at`)
+  INDEX `idx_task_comments_kind_created` (`kind`, `created_at`),
+  INDEX `idx_task_comments_source_created` (`source`, `created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ─── whatsapp_inbox (unmatched inbound WhatsApp messages) ─────────────────────
+
+CREATE TABLE IF NOT EXISTS `whatsapp_inbox` (
+  `id`                BIGINT        NOT NULL AUTO_INCREMENT,
+  `wamid`             VARCHAR(128)  NOT NULL,
+  `from_phone`        VARCHAR(32)   NOT NULL,
+  `message_type`      VARCHAR(32)   NOT NULL,                  -- text|image|document|audio|video|...
+  `body`              TEXT          DEFAULT NULL,
+  `media_url`         VARCHAR(1024) DEFAULT NULL,
+  `raw_payload`       JSON          NOT NULL,
+  `attached_task_id`  INT           DEFAULT NULL,
+  `attached_at`       DATETIME      DEFAULT NULL,
+  `attached_by`       INT           DEFAULT NULL,              -- FK → users.id
+  `received_at`       DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_whatsapp_inbox_wamid` (`wamid`),
+  CONSTRAINT `fk_whatsapp_inbox_task`
+    FOREIGN KEY (`attached_task_id`) REFERENCES `tasks` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_whatsapp_inbox_attached_by`
+    FOREIGN KEY (`attached_by`) REFERENCES `users` (`id`)
+    ON DELETE SET NULL ON UPDATE CASCADE,
+  INDEX `idx_whatsapp_inbox_attached` (`attached_task_id`),
+  INDEX `idx_whatsapp_inbox_received` (`received_at`),
+  INDEX `idx_whatsapp_inbox_from`     (`from_phone`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

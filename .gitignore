@@ -44,3 +44,6 @@ next-env.d.ts
 
 # voice diagnostics log
 /logs
+
+# whatsapp media downloads
+/media
