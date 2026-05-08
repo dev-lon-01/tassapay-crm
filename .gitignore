@@ -47,3 +47,6 @@ next-env.d.ts
 
 # whatsapp media downloads
 /media
+
+# claude code worktrees (created by EnterWorktree / git worktree add)
+.claude/worktrees/
