@@ -1,7 +1,7 @@
 import type { SupportedMethod } from "../types";
 
 /**
- * The 39 Ethiopia methods supported by Tayo's account-lookup endpoint.
+ * The 40 Ethiopia methods supported by Tayo's account-lookup endpoint.
  * `code` MUST be sent verbatim (case-sensitive) as the `bankName` field.
  * `type` distinguishes wallets from banks for the UI; both call the same
  * upstream endpoint.

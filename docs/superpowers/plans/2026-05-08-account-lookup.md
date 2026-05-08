@@ -24,7 +24,7 @@
 **New files**
 - `scripts/migrate-account-lookup.mjs` — idempotent migration
 - `src/lib/accountLookup/types.ts` — shared TS types
-- `src/lib/accountLookup/banks/ethiopia.ts` — static method list (39 entries)
+- `src/lib/accountLookup/banks/ethiopia.ts` — static method list (40 entries)
 - `src/lib/accountLookup/tayoToken.ts` — Basic Auth → token helper
 - `src/lib/accountLookup/tayoEthiopia.ts` — Tayo Ethiopia lookup handler
 - `src/lib/accountLookup/index.ts` — `lookupAccount` / `getSupportedMethods` dispatcher
@@ -270,7 +270,7 @@ Create `src/lib/accountLookup/banks/ethiopia.ts`:
 import type { SupportedMethod } from "../types";
 
 /**
- * The 39 Ethiopia methods supported by Tayo's account-lookup endpoint.
+ * The 40 Ethiopia methods supported by Tayo's account-lookup endpoint.
  * `code` MUST be sent verbatim (case-sensitive) as the `bankName` field.
  * `type` distinguishes wallets from banks for the UI; both call the same
  * upstream endpoint.
@@ -1289,13 +1289,13 @@ async function check(label, fn) {
   catch (e) { console.error(`  ✗  ${label}: ${e.message}`); exitCode = 1; }
 }
 
-await check("GET /banks?country=ET returns 39 methods", async () => {
+await check("GET /banks?country=ET returns 40 methods", async () => {
   const r = await fetch(`${BASE}/api/account-lookup/banks?country=ET`, { headers: H });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   const j = await r.json();
   if (j.country !== "ET") throw new Error("country mismatch");
-  if (!Array.isArray(j.methods) || j.methods.length !== 39)
-    throw new Error(`expected 39 methods, got ${j.methods?.length}`);
+  if (!Array.isArray(j.methods) || j.methods.length !== 40)
+    throw new Error(`expected 40 methods, got ${j.methods?.length}`);
 });
 
 let goodLookupId, badLookupId;
@@ -1774,7 +1774,7 @@ Run (in another terminal if not already): `npm run dev`
 Open `http://localhost:3000/tools/account-lookup`. Confirm:
 - "Account Lookup" appears in the desktop sidebar (and in the mobile More drawer).
 - The page renders the panel.
-- Selecting `Ethiopia` populates the bank dropdown with 39 entries.
+- Selecting `Ethiopia` populates the bank dropdown with 40 entries.
 - Looking up `CBE` + `1000188695168` shows the success card with `A/RESHID HASSEN A/KADER` and a Copy button.
 - The Copy button puts the name on the clipboard.
 - Looking up `CBE` + `1000188699999` shows the red "Lookup failed" card.

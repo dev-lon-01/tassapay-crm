@@ -45,7 +45,7 @@ Add a manual account-lookup tool for agents that verifies a beneficiary's bank o
 │  index.ts        → lookupAccount() dispatcher                │
 │  tayoEthiopia.ts → handler: token + call Tayo + normalize    │
 │  tayoToken.ts    → shared Basic-auth → token helper          │
-│  banks/ethiopia.ts → static method list (39 entries)         │
+│  banks/ethiopia.ts → static method list (40 entries)         │
 │  types.ts        → LookupRequest/Result, CountryCode, etc.   │
 └──────────────────────────────────────────────────────────────┘
                           │ Basic Auth + Efuluusrodp2025 token
@@ -127,7 +127,7 @@ Returns the supported method list for a country, used to populate the method dro
 }
 ```
 
-`code` matches Tayo's exact-string requirement (sent verbatim as `bankName`); `label` is what the agent sees. The 39 entries from Tayo's documentation are pre-classified as `bank` vs `wallet` (e.g. `CBE Birr`, `Yaya Wallet`, `Halal Pay` are wallets).
+`code` matches Tayo's exact-string requirement (sent verbatim as `bankName`); `label` is what the agent sees. The 40 entries from Tayo's documentation are pre-classified as `bank` vs `wallet` (e.g. `CBE Birr`, `Yaya Wallet`, `Halal Pay` are wallets).
 
 **Errors:** `400` if `country` is missing or unsupported.
 
@@ -252,7 +252,7 @@ export interface LookupResult {
 
 ### `banks/ethiopia.ts`
 
-A static `SupportedMethod[]` containing all 39 entries from Tayo's documentation, pre-classified as `bank` or `wallet`. The `code` field is sent verbatim as `bankName` to Tayo (no transformation, case-sensitive).
+A static `SupportedMethod[]` containing all 40 entries from Tayo's documentation, pre-classified as `bank` or `wallet`. The `code` field is sent verbatim as `bankName` to Tayo (no transformation, case-sensitive).
 
 ### `tayoToken.ts`
 
@@ -309,7 +309,7 @@ type Props = {
 
 **Layout (top → bottom):**
 1. **Country selector** — dropdown, only Ethiopia enabled today.
-2. **Method dropdown** — populated from `GET /api/account-lookup/banks?country=ET`. Type-to-filter (39 entries). Each option shows a small `Bank` or `Wallet` pill.
+2. **Method dropdown** — populated from `GET /api/account-lookup/banks?country=ET`. Type-to-filter (40 entries). Each option shows a small `Bank` or `Wallet` pill.
 3. **Account number** — text input, trims whitespace.
 4. **Lookup button** — primary, disabled until country + method + non-empty account.
 5. **Result card** (after submit):
