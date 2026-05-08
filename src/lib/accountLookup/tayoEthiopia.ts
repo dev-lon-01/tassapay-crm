@@ -1,25 +1,35 @@
 import type { LookupRequest, LookupResult } from "./types";
 import { fetchTayoToken } from "./tayoToken";
+// CommonJS module exporting { encrypt, decrypt } — same pattern used by
+// src/services/tayoSyncService.js for the RemittanceList endpoint.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { encrypt } = require("@/src/utils/tayoCrypto") as {
+  encrypt: (plain: string) => string;
+};
 
-const LOOKUP_URL =
-  "http://efuluusprod.tayotransfer.com/api/remittance/accountlookupAuthentication";
+const LOOKUP_URL = "http://efuluusprod.tayotransfer.com/api/AccountLookup";
 
 interface TayoLookupBody {
-  result?: Array<{ message?: string; code?: string }>;
-  response?: string;
-  responseDescription?: string;
-  institutionName?: string;
-  accountNumber?: string;
-  accountName?: string;
+  Result?: Array<{ Message?: string; Code?: string }>;
+  Response?: string | null;
+  ResponseDescription?: string | null;
+  InstitutionId?: string | null;
+  InstitutionName?: string | null;
+  AccountNumber?: string | null;
+  AccountName?: string | null;
 }
 
 /**
- * Calls Tayo's accountlookupAuthentication endpoint.
+ * Calls Tayo's AccountLookup endpoint.
  *
- * Tayo returns HTTP 400 for the documented "account not found / service
- * unavailable" cases — that is a normal `failed` outcome, NOT a transport
- * error. We read the JSON body in both 200 and 400 cases and read
- * `result[0].message` to decide.
+ * Auth: HTTP Basic + `Efuluusrodp2025: <session-token>` (token from /api/Token).
+ * Body: AES-encrypted JSON `{ accountnumber, bankname }` wrapped as
+ * `{ jsonstring: <encrypted> }` — same envelope used by /api/RemittanceList.
+ *
+ * Response shape (capitalized keys, NOT the camelCase shape originally documented):
+ *   { Result: [{ Message: "success"|"failed", Code: "200"|"201" }],
+ *     Response: "000"|"999"|null, ResponseDescription, InstitutionName,
+ *     AccountNumber, AccountName, ... }
  */
 export async function tayoEthiopiaLookup(req: LookupRequest): Promise<LookupResult> {
   const basicAuth = process.env.TAYO_BASIC_AUTH;
@@ -34,6 +44,13 @@ export async function tayoEthiopiaLookup(req: LookupRequest): Promise<LookupResu
     return errorResult(e instanceof Error ? e.message : String(e));
   }
 
+  const encrypted = encrypt(
+    JSON.stringify({
+      accountnumber: req.accountNumber,
+      bankname: req.methodCode,
+    })
+  );
+
   let res: Response;
   try {
     res = await fetch(LOOKUP_URL, {
@@ -43,16 +60,14 @@ export async function tayoEthiopiaLookup(req: LookupRequest): Promise<LookupResu
         Efuluusrodp2025: token,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        accountNumber: req.accountNumber,
-        bankName: req.methodCode,
-      }),
+      body: JSON.stringify({ jsonstring: encrypted }),
     });
   } catch (e) {
     return errorResult(e instanceof Error ? e.message : String(e));
   }
 
-  // Anything other than 200 or 400 is a transport-level error.
+  // Tayo returns 200 for both success and "failed" outcomes on this endpoint.
+  // 400 was the original spec; keep accepting it defensively.
   if (res.status !== 200 && res.status !== 400) {
     const text = await res.text().catch(() => "");
     return errorResult(`Unexpected upstream status ${res.status}`, text);
@@ -65,23 +80,22 @@ export async function tayoEthiopiaLookup(req: LookupRequest): Promise<LookupResu
     return errorResult(`Malformed upstream JSON: ${(e as Error).message}`);
   }
 
-  const message = body.result?.[0]?.message;
-  if (res.status === 200 && message === "success" && body.accountName) {
+  const message = body.Result?.[0]?.Message;
+  if (message === "success" && body.AccountName) {
     return {
       status: "success",
-      accountName: body.accountName,
-      responseCode: body.response ?? null,
-      responseDescription: body.responseDescription ?? null,
+      accountName: body.AccountName,
+      responseCode: body.Response ?? null,
+      responseDescription: body.ResponseDescription ?? null,
       raw: body,
     };
   }
 
-  // 200-with-failed or 400 are normal "failed" outcomes.
   return {
     status: "failed",
     accountName: null,
-    responseCode: body.response ?? null,
-    responseDescription: body.responseDescription ?? null,
+    responseCode: body.Response ?? null,
+    responseDescription: body.ResponseDescription ?? null,
     raw: body,
   };
 }
