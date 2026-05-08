@@ -316,7 +316,7 @@ type Props = {
    - **Success**: account name in large text + copy-to-clipboard button; subtitle with `method • account number • response code`. If `attachContext` set, an "Attach to {label}" button.
    - **Failed**: red banner with `responseDescription` and a hint ("Account not found, or the bank/account combination is invalid").
    - **Error**: amber banner ("Service temporarily unavailable — try again in a moment"). No attach button.
-6. **Recent lookups** (standalone page only): collapsed list of the agent's last 10 lookups, click to repopulate the form. Skipped on embedded views to keep them compact.
+6. **Recent lookups** (standalone page only): collapsed list of the agent's last 10 lookups, click to repopulate the form. Skipped on embedded views to keep them compact. **Descoped to v2** — not implemented in the initial release. Requires a new `GET /api/account-lookup/recent` route plus UI; defer to a follow-up when there's actual demand.
 
 State is component-local (`useState`); no global store. Loading state on the button. Errors surface inline, not via toast.
 
