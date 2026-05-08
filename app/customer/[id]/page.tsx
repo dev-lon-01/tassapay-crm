@@ -39,6 +39,7 @@ import { useTwilioVoice } from "@/src/context/TwilioVoiceContext";
 import { useDropdowns } from "@/src/context/DropdownsContext";
 import { LogCallModal } from "@/src/components/LogCallModal";
 import { AccountLookupPanel } from "@/src/components/AccountLookupPanel";
+import { AccountVerificationsList } from "@/src/components/AccountVerificationsList";
 
 interface ApiCustomer {
   customer_id: string;
@@ -230,6 +231,7 @@ export default function CustomerProfilePage({
   const [timeline, setTimeline] = useState<ApiInteraction[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [verificationsKey, setVerificationsKey] = useState(0);
   const [expandedNotes, setExpandedNotes] = useState<Set<number>>(new Set());
 
   const [activeTab, setActiveTab] = useState<LoggerTab>("SMS");
@@ -699,12 +701,19 @@ export default function CustomerProfilePage({
         </div>
       </div>
 
+      <AccountVerificationsList
+        targetType="customer"
+        targetId={customer.customer_id}
+        refreshKey={verificationsKey}
+      />
+
       <AccountLookupPanel
         attachContext={{
           targetType: "customer",
           targetId: customer.customer_id,
           label: customer.full_name ?? `Customer ${customer.customer_id}`,
         }}
+        onAttached={() => setVerificationsKey((k) => k + 1)}
       />
 
       <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
