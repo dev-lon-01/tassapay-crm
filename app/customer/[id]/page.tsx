@@ -38,6 +38,7 @@ import { useQueue, type TaskStatus } from "@/src/context/QueueContext";
 import { useTwilioVoice } from "@/src/context/TwilioVoiceContext";
 import { useDropdowns } from "@/src/context/DropdownsContext";
 import { LogCallModal } from "@/src/components/LogCallModal";
+import { AccountLookupPanel } from "@/src/components/AccountLookupPanel";
 
 interface ApiCustomer {
   customer_id: string;
@@ -697,6 +698,14 @@ export default function CustomerProfilePage({
           </span>
         </div>
       </div>
+
+      <AccountLookupPanel
+        attachContext={{
+          targetType: "customer",
+          targetId: customer.customer_id,
+          label: customer.full_name ?? `Customer ${customer.customer_id}`,
+        }}
+      />
 
       <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
         <div className="mb-4 flex items-center justify-between">
