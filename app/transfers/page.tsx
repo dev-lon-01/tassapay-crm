@@ -287,7 +287,7 @@ function TransferCard({ transfer }: { transfer: ApiTransfer }) {
             <p className="text-xs text-slate-500">#{transfer.customer_id}</p>
           </div>
         </div>
-        <TransferStatusBadge status={transfer.status} />
+        <TransferStatusBadge status={transfer.status} emptyValue={EMPTY_VALUE} />
       </div>
       <div className="space-y-1 text-xs text-slate-600">
         {transfer.transaction_ref && (
@@ -349,7 +349,7 @@ function TransferRow({ transfer }: { transfer: ApiTransfer }) {
         {formatAmount(transfer.send_amount, transfer.send_currency)}
       </td>
       <td className="px-3 py-3">
-        <TransferStatusBadge status={transfer.status} />
+        <TransferStatusBadge status={transfer.status} emptyValue={EMPTY_VALUE} />
       </td>
       <td className="py-3 pl-3 pr-5">
         <button
