@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   ArrowLeftRight, Award, Banknote, BarChart2, Bell, Bot, CheckSquare, ClipboardList, CreditCard, FileText,
-  LayoutDashboard, ListFilter, LogOut, Menu, RefreshCw, Activity,
+  LayoutDashboard, ListFilter, LogOut, Menu, RefreshCw, Activity, Search,
   ShieldAlert, Users, UsersRound, X, UserPlus, Scale,
 } from "lucide-react";
 import { useAuth } from "@/src/context/AuthContext";
@@ -24,10 +24,11 @@ const navItems: NavItem[] = [
   { label: "My Tasks",    href: "/my-tasks",     icon: CheckSquare },
   { label: "To Do",       href: "/to-do",        icon: ClipboardList },
   { label: "QA",          href: "/qa-transfers", icon: ShieldAlert },
-  { label: "Templates",   href: "/templates",    icon: FileText },
-  { label: "Automations", href: "/automations",  icon: Bot },
-  { label: "Activity",    href: "/activity",     icon: Activity },
-  { label: "Dropdowns",   href: "/settings/dropdowns", icon: ListFilter },
+  { label: "Templates",      href: "/templates",            icon: FileText },
+  { label: "Account Lookup", href: "/tools/account-lookup", icon: Search },
+  { label: "Automations",    href: "/automations",          icon: Bot },
+  { label: "Activity",       href: "/activity",             icon: Activity },
+  { label: "Dropdowns",      href: "/settings/dropdowns",   icon: ListFilter },
 ];
 
 const adminItems: NavItem[] = [
@@ -59,9 +60,10 @@ const drawerItems: NavItem[] = [
   { label: "Transfers",   href: "/transfers",    icon: ArrowLeftRight },
   { label: "To Do",       href: "/to-do",        icon: ClipboardList },
   { label: "QA",          href: "/qa-transfers", icon: ShieldAlert },
-  { label: "Templates",   href: "/templates",    icon: FileText },
-  { label: "Automations", href: "/automations",  icon: Bot },
-  { label: "Dropdowns",   href: "/settings/dropdowns", icon: ListFilter },
+  { label: "Templates",      href: "/templates",            icon: FileText },
+  { label: "Account Lookup", href: "/tools/account-lookup", icon: Search },
+  { label: "Automations",    href: "/automations",          icon: Bot },
+  { label: "Dropdowns",      href: "/settings/dropdowns",   icon: ListFilter },
 ];
 
 export function AppNavigation() {

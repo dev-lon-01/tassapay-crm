@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, ArrowLeft, CreditCard, Loader2, Settings } from "lucide-react";
 import { apiFetch } from "@/src/lib/apiFetch";
 import { useAuth } from "@/src/context/AuthContext";
+import { AccountLookupPanel } from "@/src/components/AccountLookupPanel";
+import { AccountVerificationsList } from "@/src/components/AccountVerificationsList";
 
 interface TransferDetail {
   id: number;
@@ -111,6 +113,7 @@ export default function TransferDetailPage({ params }: { params: { id: string } 
   const [data, setData] = useState<TransferDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [verificationsKey, setVerificationsKey] = useState(0);
 
   // Manual reconciliation form state
   const [recoCategory, setRecoCategory] = useState("");
@@ -228,6 +231,21 @@ export default function TransferDetailPage({ params }: { params: { id: string } 
         <StatCard label="Beneficiary" value={transfer.beneficiary_name ?? "-"} />
         <StatCard label="Created" value={formatDate(transfer.created_at)} />
       </div>
+
+      <AccountVerificationsList
+        targetType="transfer"
+        targetId={String(transfer.id)}
+        refreshKey={verificationsKey}
+      />
+
+      <AccountLookupPanel
+        attachContext={{
+          targetType: "transfer",
+          targetId: String(transfer.id),
+          label: transfer.transaction_ref ?? `Transfer #${transfer.id}`,
+        }}
+        onAttached={() => setVerificationsKey((k) => k + 1)}
+      />
 
       <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
         <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
