@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, ChevronLeft, ChevronRight, Loader2, Search, SearchX } from "lucide-react";
 import { apiFetch } from "@/src/lib/apiFetch";
+import { TransferStatusBadge } from "@/src/components/TransferStatusBadge";
 
 // â”€â”€â”€ types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -114,34 +115,6 @@ function formatAmount(amount: number | null, currency: string | null): string {
   } catch {
     return `${amount} ${currency}`;
   }
-}
-
-// â”€â”€â”€ status badge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-const PROCESSED = new Set(["Completed", "Deposited", "Paid"]);
-const CANCELLED = new Set(["Cancelled", "Cancel", "Rejected"]);
-
-function StatusBadge({ status }: { status: string | null }) {
-  if (!status) return <span className="text-xs text-slate-400">{EMPTY_VALUE}</span>;
-  if (PROCESSED.has(status)) {
-    return (
-      <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
-        {status}
-      </span>
-    );
-  }
-  if (CANCELLED.has(status)) {
-    return (
-      <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
-        {status}
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
-      {status}
-    </span>
-  );
 }
 
 // â”€â”€â”€ filter bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -314,7 +287,7 @@ function TransferCard({ transfer }: { transfer: ApiTransfer }) {
             <p className="text-xs text-slate-500">#{transfer.customer_id}</p>
           </div>
         </div>
-        <StatusBadge status={transfer.status} />
+        <TransferStatusBadge status={transfer.status} />
       </div>
       <div className="space-y-1 text-xs text-slate-600">
         {transfer.transaction_ref && (
@@ -376,7 +349,7 @@ function TransferRow({ transfer }: { transfer: ApiTransfer }) {
         {formatAmount(transfer.send_amount, transfer.send_currency)}
       </td>
       <td className="px-3 py-3">
-        <StatusBadge status={transfer.status} />
+        <TransferStatusBadge status={transfer.status} />
       </td>
       <td className="py-3 pl-3 pr-5">
         <button
