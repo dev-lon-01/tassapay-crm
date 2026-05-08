@@ -550,3 +550,40 @@ CREATE TABLE IF NOT EXISTS `whatsapp_inbox` (
   INDEX `idx_whatsapp_inbox_received` (`received_at`),
   INDEX `idx_whatsapp_inbox_from`     (`from_phone`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ─── account lookup ──────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS `account_lookups` (
+  `id`                   INT           NOT NULL AUTO_INCREMENT,
+  `agent_id`             INT           NOT NULL,
+  `country_code`         CHAR(2)       NOT NULL,
+  `provider`             VARCHAR(32)   NOT NULL,
+  `method_type`          ENUM('bank','wallet') NOT NULL,
+  `method_code`          VARCHAR(64)   NOT NULL,
+  `account_number`       VARCHAR(64)   NOT NULL,
+  `status`               ENUM('success','failed','error') NOT NULL,
+  `account_name`         VARCHAR(255)  DEFAULT NULL,
+  `response_code`        VARCHAR(8)    DEFAULT NULL,
+  `response_description` VARCHAR(255)  DEFAULT NULL,
+  `raw_response`         JSON          DEFAULT NULL,
+  `created_at`           DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_account_lookups_agent_created` (`agent_id`, `created_at`),
+  KEY `idx_account_lookups_acct_country`  (`account_number`, `country_code`),
+  CONSTRAINT `fk_account_lookups_agent` FOREIGN KEY (`agent_id`)
+    REFERENCES `users`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `account_verifications` (
+  `id`           INT           NOT NULL AUTO_INCREMENT,
+  `lookup_id`    INT           NOT NULL,
+  `target_type`  ENUM('transfer','customer') NOT NULL,
+  `target_id`    VARCHAR(50)   NOT NULL,
+  `attached_by`  INT           NOT NULL,
+  `attached_at`  DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_account_verifications_target` (`target_type`, `target_id`),
+  CONSTRAINT `fk_account_verifications_lookup` FOREIGN KEY (`lookup_id`)
+    REFERENCES `account_lookups`(`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_account_verifications_user` FOREIGN KEY (`attached_by`)
+    REFERENCES `users`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
