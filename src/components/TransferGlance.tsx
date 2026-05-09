@@ -6,9 +6,9 @@ import { TransferStatusBadge } from "@/src/components/TransferStatusBadge";
 
 interface TransferDetailResponse {
   status: string | null;
-  send_amount: number | string | null;
+  send_amount: number | null;
   send_currency: string | null;
-  receive_amount: number | string | null;
+  receive_amount: number | null;
   receive_currency: string | null;
   beneficiary_name: string | null;
   data_field_id: string | null;
@@ -28,11 +28,9 @@ export interface TransferGlanceProps {
   transferId: number;
 }
 
-function formatAmount(value: number | string | null): string | null {
-  if (value === null || value === undefined) return null;
-  const n = typeof value === "string" ? Number(value) : value;
-  if (!Number.isFinite(n)) return null;
-  return n.toLocaleString("en-GB", {
+function formatAmount(value: number | null): string | null {
+  if (value === null || !Number.isFinite(value)) return null;
+  return value.toLocaleString("en-GB", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
@@ -80,7 +78,8 @@ export function TransferGlance({ transferId }: TransferGlanceProps) {
   if (phase === "loading") {
     return (
       <div
-        aria-hidden
+        role="status"
+        aria-label="Loading transfer details"
         className="mt-2 h-12 animate-pulse rounded-lg border border-slate-200 bg-slate-100"
       />
     );
