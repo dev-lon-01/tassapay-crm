@@ -1546,6 +1546,7 @@ function MobileTaskCard({ task, onClose, onEdit, onCommentAdded, onNavigateCusto
         <div className="mb-2">
           <button
             type="button"
+            aria-expanded={showGlance}
             onClick={() => setShowGlance((v) => !v)}
             className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-700"
           >
