@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { apiFetch } from "@/src/lib/apiFetch";
 import { useAuth } from "@/src/context/AuthContext";
+import { TransferGlance } from "@/src/components/TransferGlance";
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
@@ -1485,6 +1486,7 @@ function TaskRow({ task, onClose, onEdit, onCommentAdded, onNavigateCustomer }: 
                 <ExternalLink size={10} className="ml-1" />
               </a>
             )}
+            {task.transfer_id != null && <TransferGlance transferId={task.transfer_id} />}
             <CommentsList taskId={task.id} commentKey={commentKey} />
             <AddCommentInline taskId={task.id} onAdded={handleCommentAdded} />
           </td>
