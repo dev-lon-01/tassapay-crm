@@ -6,8 +6,10 @@ import {
   ClipboardList,
   Plus,
   Search,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Loader2,
   X,
   CheckCircle2,
@@ -1500,6 +1502,7 @@ function TaskRow({ task, onClose, onEdit, onCommentAdded, onNavigateCustomer }: 
 
 function MobileTaskCard({ task, onClose, onEdit, onCommentAdded, onNavigateCustomer }: TaskRowProps) {
   const [commentKey, setCommentKey] = useState(0);
+  const [showGlance, setShowGlance] = useState(false);
 
   function handleCommentAdded() {
     setCommentKey((k) => k + 1);
@@ -1538,6 +1541,19 @@ function MobileTaskCard({ task, onClose, onEdit, onCommentAdded, onNavigateCusto
           Transfer: {task.transfer_reference}
           <ExternalLink size={10} className="ml-1" />
         </a>
+      )}
+      {task.transfer_id != null && (
+        <div className="mb-2">
+          <button
+            type="button"
+            onClick={() => setShowGlance((v) => !v)}
+            className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-700"
+          >
+            {showGlance ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            {showGlance ? "Hide transfer info" : "Show transfer info"}
+          </button>
+          {showGlance && <TransferGlance transferId={task.transfer_id} />}
+        </div>
       )}
       <CommentsList taskId={task.id} commentKey={commentKey} />
       <div className="flex items-center gap-2 border-t border-slate-100 pt-2.5">
