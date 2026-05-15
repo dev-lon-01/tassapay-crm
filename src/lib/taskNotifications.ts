@@ -49,6 +49,7 @@ function firstName(full: string | null): string {
 export async function notifyAssignee(input: TaskAssignmentNotificationInput): Promise<void> {
   const { taskId, recipientUserId, actorUserId, eventType } = input;
 
+  try {
   const [recipRows] = await pool.execute<RecipientRow[]>(
     `SELECT id, name, email, pushover_user_key,
             notify_task_assignment_pushover,
@@ -158,4 +159,8 @@ export async function notifyAssignee(input: TaskAssignmentNotificationInput): Pr
   }
 
   await Promise.all(jobs);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[notifyAssignee] unexpected error for task ${taskId} / user ${recipientUserId}: ${msg}`);
+  }
 }
