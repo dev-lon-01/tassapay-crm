@@ -29,6 +29,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const view       = searchParams.get("view")?.trim()       || "open";
     const customerId = searchParams.get("customerId")?.trim() || "";
+    const transferReference = searchParams.get("transferReference")?.trim() || "";
     const priority   = searchParams.get("priority")?.trim()   || "";
     const statusParam = searchParams.get("status")?.trim()    || "";
     const search     = searchParams.get("search")?.trim()     || "";
@@ -62,6 +63,11 @@ export async function GET(req: NextRequest) {
     if (customerId) {
       where.push(`t.customer_id = ?`);
       params.push(customerId);
+    }
+
+    if (transferReference) {
+      where.push(`t.transfer_reference = ?`);
+      params.push(transferReference);
     }
 
     // Whitelist enum values to prevent injection

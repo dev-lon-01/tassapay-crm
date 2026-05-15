@@ -165,6 +165,7 @@ function CreateTaskModal({ agents, onClose, onCreated }: CreateTaskModalProps) {
   const [transferOptions, setTransferOptions]   = useState<TransferSearchRow[]>([]);
   const [transferLoading, setTransferLoading]   = useState(false);
   const [transferOpen, setTransferOpen]         = useState(false);
+  const [existingOpenTasksForTransfer, setExistingOpenTasksForTransfer] = useState<Task[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -230,6 +231,26 @@ function CreateTaskModal({ agents, onClose, onCreated }: CreateTaskModalProps) {
     }, 300);
     return () => { if (transferDebounceRef.current) clearTimeout(transferDebounceRef.current); };
   }, [transferQuery]);
+
+  useEffect(() => {
+    if (!selectedTransfer) {
+      setExistingOpenTasksForTransfer([]);
+      return;
+    }
+    const ref = selectedTransfer.transaction_ref;
+    let cancelled = false;
+    apiFetch(`/api/todos?view=open&transferReference=${encodeURIComponent(ref)}&limit=10`)
+      .then((r) => (r.ok ? r.json() : { data: [] }))
+      .then((d) => {
+        if (cancelled) return;
+        const rows = Array.isArray(d?.data) ? (d.data as Task[]) : [];
+        setExistingOpenTasksForTransfer(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setExistingOpenTasksForTransfer([]);
+      });
+    return () => { cancelled = true; };
+  }, [selectedTransfer]);
 
   function onSelectTransfer(t: TransferSearchRow) {
     setSelectedTransfer(t);
@@ -447,6 +468,40 @@ function CreateTaskModal({ agents, onClose, onCreated }: CreateTaskModalProps) {
                   <span>{selectedTransfer.send_amount} {selectedTransfer.send_currency} → {selectedTransfer.receive_amount} {selectedTransfer.receive_currency}</span>
                 </div>
                 <p className="mt-0.5 text-indigo-500">{selectedTransfer.full_name ?? selectedTransfer.customer_id} → {selectedTransfer.beneficiary_name ?? "Unknown beneficiary"}</p>
+              </div>
+            )}
+            {selectedTransfer && existingOpenTasksForTransfer.length > 0 && (
+              <div
+                role="alert"
+                aria-live="polite"
+                className="mt-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800"
+              >
+                <div className="mb-1.5 flex items-center gap-1.5 font-semibold">
+                  <AlertCircle size={12} className="shrink-0" />
+                  This transfer already has {existingOpenTasksForTransfer.length} open case
+                  {existingOpenTasksForTransfer.length === 1 ? "" : "s"}:
+                </div>
+                <ul className="space-y-1">
+                  {existingOpenTasksForTransfer.map((t) => (
+                    <li key={t.id} className="flex items-center gap-2">
+                      <span className="truncate">
+                        <span className="font-medium">{t.title}</span>
+                        <span className="text-amber-700"> — {t.assigned_agent_name ?? "Unassigned"} — {t.priority}</span>
+                      </span>
+                      <a
+                        href={`/to-do?taskId=${t.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="ml-auto shrink-0 inline-flex items-center gap-0.5 text-amber-900 underline-offset-2 hover:underline"
+                      >
+                        View <ExternalLink size={10} />
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-1.5 text-[11px] text-amber-700">
+                  Review or comment on an existing case to avoid duplicate work.
+                </p>
               </div>
             )}
             {transferOpen && transferQuery.trim().length >= 3 && (
