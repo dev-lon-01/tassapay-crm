@@ -26,6 +26,7 @@ interface StaffUser {
   sip_username: string | null;
   allowed_regions: string[] | string;
   can_view_dashboard: number | boolean;
+  pushover_user_key: string | null;
   created_at: string;
 }
 
@@ -90,6 +91,7 @@ function UserModal({ user, onClose, onSaved }: ModalProps) {
   const [role, setRole]                     = useState<Role>((user?.role as Role) ?? "Agent");
   const [isActive, setIsActive]             = useState(user?.is_active !== 0);
   const [sipUsername, setSipUsername]       = useState(user?.sip_username ?? "");
+  const [pushoverUserKey, setPushoverUserKey] = useState(user?.pushover_user_key ?? "");
   const [allowedRegions, setAllowedRegions] = useState<string[]>(initialRegions);
   const [canViewDash, setCanViewDash]       = useState(Boolean(user?.can_view_dashboard));
   const [password, setPassword]             = useState("");
@@ -115,8 +117,8 @@ function UserModal({ user, onClose, onSaved }: ModalProps) {
 
     try {
       const body = isEdit
-        ? { name, email, role, is_active: isActive, sip_username: sipUsername.trim() || null, allowed_regions: allowedRegions, can_view_dashboard: canViewDash }
-        : { name, email, role, password, sip_username: sipUsername.trim() || null, allowed_regions: allowedRegions, can_view_dashboard: canViewDash };
+        ? { name, email, role, is_active: isActive, sip_username: sipUsername.trim() || null, allowed_regions: allowedRegions, can_view_dashboard: canViewDash, pushover_user_key: pushoverUserKey.trim() || null }
+        : { name, email, role, password, sip_username: sipUsername.trim() || null, allowed_regions: allowedRegions, can_view_dashboard: canViewDash, pushover_user_key: pushoverUserKey.trim() || null };
 
       const res = await apiFetch(
         isEdit ? `/api/users/${user!.id}` : "/api/users",
@@ -253,6 +255,20 @@ function UserModal({ user, onClose, onSaved }: ModalProps) {
             onChange={(e) => setSipUsername(e.target.value)}
             className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-800 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-400"
             placeholder="e.g. abdi (leave blank if not using SIP)"
+          />
+        </div>
+
+        {/* Pushover user key */}
+        <div className="space-y-1">
+          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Pushover user key
+          </label>
+          <input
+            type="text"
+            value={pushoverUserKey}
+            onChange={(e) => setPushoverUserKey(e.target.value)}
+            className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-800 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            placeholder="(empty = no Pushover delivery for task notifications)"
           />
         </div>
 

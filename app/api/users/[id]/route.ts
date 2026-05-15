@@ -26,7 +26,7 @@ export async function PUT(
 
   try {
     const body = await req.json();
-    const { name, email, role, is_active, sip_username, allowed_regions, can_view_dashboard } = body as {
+    const { name, email, role, is_active, sip_username, allowed_regions, can_view_dashboard, pushover_user_key } = body as {
       name?: string;
       email?: string;
       role?: string;
@@ -34,6 +34,7 @@ export async function PUT(
       sip_username?: string;
       allowed_regions?: string[];
       can_view_dashboard?: boolean;
+      pushover_user_key?: string | null;
     };
 
     if (!name?.trim() || !email?.trim() || !role?.trim()) {
@@ -57,10 +58,13 @@ export async function PUT(
       : ["UK", "EU"];
     const dashAccess = can_view_dashboard === true ? 1 : 0;
     const sipUser    = sip_username?.trim() || null;
+    const pushKey    = typeof pushover_user_key === "string" && pushover_user_key.trim()
+      ? pushover_user_key.trim()
+      : null;
 
     const [result] = await pool.execute<ResultSetHeader>(
-      "UPDATE users SET name = ?, email = ?, role = ?, is_active = ?, sip_username = ?, allowed_regions = ?, can_view_dashboard = ? WHERE id = ?",
-      [name.trim(), email.trim().toLowerCase(), role, activeVal, sipUser, JSON.stringify(regions), dashAccess, userId]
+      "UPDATE users SET name = ?, email = ?, role = ?, is_active = ?, sip_username = ?, allowed_regions = ?, can_view_dashboard = ?, pushover_user_key = ? WHERE id = ?",
+      [name.trim(), email.trim().toLowerCase(), role, activeVal, sipUser, JSON.stringify(regions), dashAccess, pushKey, userId]
     );
 
     if (result.affectedRows === 0) {
@@ -68,7 +72,7 @@ export async function PUT(
     }
 
     const [rows] = await pool.execute<RowDataPacket[]>(
-      "SELECT id, name, email, role, is_active, sip_username, allowed_regions, can_view_dashboard, created_at FROM users WHERE id = ?",
+      "SELECT id, name, email, role, is_active, sip_username, allowed_regions, can_view_dashboard, pushover_user_key, created_at FROM users WHERE id = ?",
       [userId]
     );
 
