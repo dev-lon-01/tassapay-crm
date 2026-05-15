@@ -95,12 +95,15 @@ function flagFor(country: string | null): string {
   return countryCode ? countryCodeToFlag(countryCode) : String.fromCodePoint(0x1f30d);
 }
 
-function formatDate(iso: string | null): string {
+function formatDateTime(iso: string | null): string {
   if (!iso) return EMPTY_VALUE;
-  return new Date(iso).toLocaleDateString("en-GB", {
+  return new Date(iso).toLocaleString("en-GB", {
     day: "2-digit",
     month: "short",
     year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
   });
 }
 
@@ -310,7 +313,7 @@ function TransferCard({ transfer }: { transfer: ApiTransfer }) {
         <span className="font-semibold text-slate-700">
           {formatAmount(transfer.send_amount, transfer.send_currency)}
         </span>
-        <span>{formatDate(transfer.created_at)}</span>
+        <span>{formatDateTime(transfer.created_at)}</span>
       </div>
     </article>
   );
@@ -326,7 +329,7 @@ function TransferRow({ transfer }: { transfer: ApiTransfer }) {
       onClick={() => router.push(`/transfers/${transfer.id}`)}
     >
       <td className="whitespace-nowrap py-3 pl-5 pr-3 text-xs text-slate-500">
-        {formatDate(transfer.created_at)}
+        {formatDateTime(transfer.created_at)}
       </td>
       <td className="px-3 py-3 font-mono text-xs text-slate-700">
         {transfer.transaction_ref ?? <span className="italic text-slate-400">{EMPTY_VALUE}</span>}

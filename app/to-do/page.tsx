@@ -123,9 +123,10 @@ function statusBadge(status: TaskStatus) {
   );
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-GB", {
+function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString("en-GB", {
     day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit", hour12: false,
   });
 }
 
@@ -1050,7 +1051,7 @@ function CommentsList({ taskId, commentKey }: { taskId: number; commentKey: numb
         <li key={c.id} className="rounded-lg bg-white border border-slate-100 px-3 py-2 text-xs text-slate-700">
           <span className="font-medium text-slate-500">{c.agent_name ?? "Agent"}</span>
           <span className="mx-1.5 text-slate-300">·</span>
-          <span className="text-slate-400">{formatDate(c.created_at)}</span>
+          <span className="text-slate-400">{formatDateTime(c.created_at)}</span>
           <p className="mt-0.5 text-slate-700">{c.comment}</p>
         </li>
       ))}
@@ -1297,7 +1298,7 @@ export default function ToDoPage() {
                   <th className="py-3 px-3">Assigned To</th>
                   <th className="py-3 px-3">Category</th>
                   <th className="py-3 px-3">Status</th>
-                  <th className="py-3 px-3">Updated</th>
+                  <th className="py-3 px-3">Opened</th>
                   <th className="py-3 px-3 pr-5" />
                 </tr>
               </thead>
@@ -1453,7 +1454,7 @@ function TaskRow({ task, onClose, onEdit, onCommentAdded, onNavigateCustomer }: 
           <span className="text-xs text-slate-500">{categoryLabel(task.category)}</span>
         </td>
         <td className="py-3 px-3">{statusBadge(task.status)}</td>
-        <td className="py-3 px-3 text-xs text-slate-400 whitespace-nowrap">{formatDate(task.updated_at)}</td>
+        <td className="py-3 px-3 text-xs text-slate-400 whitespace-nowrap">{formatDateTime(task.created_at)}</td>
         <td className="py-3 pl-3 pr-5">
           <div className="flex items-center gap-1.5 opacity-0 transition group-hover:opacity-100">
             <button
@@ -1531,7 +1532,7 @@ function MobileTaskCard({ task, onClose, onEdit, onCommentAdded, onNavigateCusto
       </div>
       <div className="mb-3 flex items-center justify-between text-xs text-slate-400">
         <span>{task.assigned_agent_name ?? "Unassigned"}</span>
-        <span>{formatDate(task.updated_at)}</span>
+        <span>{formatDateTime(task.created_at)}</span>
       </div>
       {task.transfer_reference && (
         <a
