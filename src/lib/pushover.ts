@@ -9,7 +9,9 @@ export async function sendPushoverAlert(
   message: string,
   title: string,
   priority: number,
-  sound: string
+  sound: string,
+  url?: string,
+  urlTitle?: string
 ): Promise<void> {
   const token = process.env.PUSHOVER_APP_TOKEN;
   if (!token || !userKeys.length) return;
@@ -17,6 +19,8 @@ export async function sendPushoverAlert(
   for (const user of userKeys) {
     const body: Record<string, unknown> = { token, user, message, title, priority, sound };
     if (priority === 2) { body.retry = 60; body.expire = 3600; }
+    if (url) body.url = url;
+    if (urlTitle) body.url_title = urlTitle;
 
     const payload = JSON.stringify(body);
     await new Promise<void>((resolve) => {

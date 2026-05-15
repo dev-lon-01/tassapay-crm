@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/src/lib/db";
 import { requireAuth } from "@/src/lib/auth";
+import { notifyAssignee } from "@/src/lib/taskNotifications";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
 
 /**
@@ -182,6 +183,18 @@ export async function PATCH(
       return NextResponse.json({ error: "No fields to update" }, { status: 400 });
     }
 
+    let oldAssigneeId: number | null = null;
+    if (assigned_agent_id !== undefined) {
+      const [currentRows] = await pool.execute<RowDataPacket[]>(
+        `SELECT assigned_agent_id FROM tasks WHERE id = ? LIMIT 1`,
+        [taskId]
+      );
+      if (currentRows.length === 0) {
+        return NextResponse.json({ error: "Task not found" }, { status: 404 });
+      }
+      oldAssigneeId = (currentRows[0] as { assigned_agent_id: number | null }).assigned_agent_id;
+    }
+
     values.push(taskId);
 
     const [result] = await pool.execute<ResultSetHeader>(
@@ -218,6 +231,18 @@ export async function PATCH(
        WHERE t.id = ?`,
       [taskId]
     );
+
+    if (assigned_agent_id !== undefined) {
+      const newAssigneeId = typeof assigned_agent_id === "number" ? assigned_agent_id : null;
+      if (newAssigneeId !== null && newAssigneeId !== oldAssigneeId) {
+        notifyAssignee({
+          taskId,
+          recipientUserId: newAssigneeId,
+          actorUserId: auth.id,
+          eventType: "reassigned",
+        }).catch((err) => console.error("[PATCH /api/todos/:id] notify failed:", err));
+      }
+    }
 
     return NextResponse.json(taskRows[0]);
   } catch (err) {

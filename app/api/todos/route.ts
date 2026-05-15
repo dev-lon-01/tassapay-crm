@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/src/lib/db";
 import { requireAuth } from "@/src/lib/auth";
+import { notifyAssignee } from "@/src/lib/taskNotifications";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
 
 /**
@@ -223,6 +224,16 @@ export async function POST(req: NextRequest) {
 
     // rows is an array of RowDataPacket; return the first row (or null)
     const firstRow = Array.isArray(rows) ? (rows as RowDataPacket[])[0] ?? null : null;
+
+    if (typeof safeAgentId === "number") {
+      notifyAssignee({
+        taskId: insertId,
+        recipientUserId: safeAgentId,
+        actorUserId: auth.id,
+        eventType: "assigned",
+      }).catch((err) => console.error("[POST /api/todos] notify failed:", err));
+    }
+
     return NextResponse.json(firstRow, { status: 201 });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
