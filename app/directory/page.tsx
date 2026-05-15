@@ -17,6 +17,8 @@ interface ApiCustomer {
   kyc_completion_date: string | null;
   risk_status: string | null;
   total_transfers: number;
+  is_lead: 0 | 1 | null;
+  lead_stage: string | null;
 }
 
 interface PaginatedResponse {
@@ -33,6 +35,7 @@ interface Filters {
   kyc: string;
   transfer: string;
   refSearch: string;
+  includeLeads: string;
 }
 
 // ─── lookup maps ──────────────────────────────────────────────────────────────
@@ -231,6 +234,17 @@ function FilterBar({ filters, onChange, countries }: FilterBarProps) {
           <option value="HasTransfers">Has Transfers</option>
         </select>
       </div>
+      <div className="mt-3 flex items-center">
+        <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-600 cursor-pointer">
+          <input
+            type="checkbox"
+            className="h-3.5 w-3.5 rounded border-slate-300 text-emerald-500 focus:ring-emerald-400"
+            checked={filters.includeLeads === "1"}
+            onChange={(e) => onChange("includeLeads", e.target.checked ? "1" : "")}
+          />
+          Include leads
+        </label>
+      </div>
     </div>
   );
 }
@@ -322,8 +336,13 @@ function CustomerCard({ customer }: { customer: ApiCustomer }) {
         <div className="flex items-center gap-2.5">
           <span className="text-3xl leading-none">{flagFor(customer.country)}</span>
           <div>
-            <p className="text-sm font-semibold text-slate-900">
-              {customer.full_name ?? "-"}
+            <p className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+              <span>{customer.full_name ?? "-"}</span>
+              {customer.is_lead === 1 && (
+                <span className="inline-flex items-center rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700 ring-1 ring-sky-200">
+                  Lead
+                </span>
+              )}
             </p>
             <p className="text-xs text-slate-500">
               #{customer.customer_id} · {customer.country ?? "-"}
@@ -370,6 +389,11 @@ function CustomerRow({ customer }: { customer: ApiCustomer }) {
           <span className="text-sm font-semibold text-slate-800">
             {customer.full_name ?? "-"}
           </span>
+          {customer.is_lead === 1 && (
+            <span className="inline-flex items-center rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700 ring-1 ring-sky-200">
+              Lead
+            </span>
+          )}
         </div>
       </td>
       <td className="px-3 py-3 text-sm text-slate-600">{customer.country ?? "-"}</td>
@@ -437,6 +461,7 @@ export default function DirectoryPage() {
     kyc: "All",
     transfer: "All",
     refSearch: "",
+    includeLeads: "",
   });
 
   // Updating a filter also resets to page 1
@@ -465,6 +490,7 @@ export default function DirectoryPage() {
           params.set("transferStatus", filters.transfer);
         if (filters.search.trim()) params.set("search", filters.search.trim());
         if (filters.refSearch.trim()) params.set("reference_search", filters.refSearch.trim());
+        if (filters.includeLeads === "1") params.set("include_leads", "1");
         params.set("page", String(currentPage));
         params.set("limit", String(LIMIT));
 

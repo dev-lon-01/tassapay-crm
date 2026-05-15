@@ -72,6 +72,8 @@ interface CustomerSearchRow {
   phone_number: string | null;
   country: string | null;
   total_transfers: number;
+  is_lead: 0 | 1 | null;
+  lead_stage: string | null;
 }
 
 interface CustomerSearchResponse {
@@ -239,6 +241,7 @@ function CreateTaskModal({ agents, onClose, onCreated }: CreateTaskModalProps) {
       const synth: CustomerSearchRow = {
         customer_id: t.customer_id, full_name: t.full_name,
         email: null, phone_number: null, country: null, total_transfers: 0,
+        is_lead: null, lead_stage: null,
       };
       setSelectedCustomer(synth);
       setCustomerQuery(t.full_name ? `${t.full_name} (${t.customer_id})` : t.customer_id);
@@ -261,8 +264,8 @@ function CreateTaskModal({ agents, onClose, onCreated }: CreateTaskModalProps) {
       try {
         const encoded = encodeURIComponent(q);
         const [searchRes, refRes] = await Promise.all([
-          apiFetch(`/api/customers?search=${encoded}&page=1&limit=8`),
-          apiFetch(`/api/customers?reference_search=${encoded}&page=1&limit=8`),
+          apiFetch(`/api/customers?search=${encoded}&page=1&limit=8&include_leads=1`),
+          apiFetch(`/api/customers?reference_search=${encoded}&page=1&limit=8&include_leads=1`),
         ]);
 
         const [searchData, refData] = await Promise.all([
@@ -398,7 +401,14 @@ function CreateTaskModal({ agents, onClose, onCreated }: CreateTaskModalProps) {
                         onClick={() => onSelectCustomer(c)}
                         className="w-full px-3 py-2.5 text-left transition hover:bg-slate-50"
                       >
-                        <p className="truncate text-sm font-medium text-slate-800">{optionLabel(c)}</p>
+                        <p className="truncate text-sm font-medium text-slate-800 flex items-center gap-2">
+                          <span className="truncate">{optionLabel(c)}</span>
+                          {c.is_lead === 1 && (
+                            <span className="inline-flex items-center rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700 ring-1 ring-sky-200 shrink-0">
+                              Lead
+                            </span>
+                          )}
+                        </p>
                         <p className="truncate text-xs text-slate-500">{optionMeta(c)}</p>
                       </button>
                     ))}
@@ -666,6 +676,7 @@ function EditTaskModal({ task, agents, onClose, onSaved }: EditTaskModalProps) {
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerSearchRow | null>({
     customer_id: task.customer_id, full_name: task.customer_name,
     email: null, phone_number: null, country: null, total_transfers: 0,
+    is_lead: null, lead_stage: null,
   });
   const [customerOptions,  setCustomerOptions]  = useState<CustomerSearchRow[]>([]);
   const [customerLoading,  setCustomerLoading]  = useState(false);
@@ -732,8 +743,8 @@ function EditTaskModal({ task, agents, onClose, onSaved }: EditTaskModalProps) {
       try {
         const encoded = encodeURIComponent(q);
         const [searchRes, refRes] = await Promise.all([
-          apiFetch(`/api/customers?search=${encoded}&page=1&limit=8`),
-          apiFetch(`/api/customers?reference_search=${encoded}&page=1&limit=8`),
+          apiFetch(`/api/customers?search=${encoded}&page=1&limit=8&include_leads=1`),
+          apiFetch(`/api/customers?reference_search=${encoded}&page=1&limit=8&include_leads=1`),
         ]);
         const [searchData, refData] = await Promise.all([
           searchRes.ok ? searchRes.json() : Promise.resolve([]),
@@ -785,6 +796,7 @@ function EditTaskModal({ task, agents, onClose, onSaved }: EditTaskModalProps) {
     const synth: CustomerSearchRow = {
       customer_id: t.customer_id, full_name: t.full_name,
       email: null, phone_number: null, country: null, total_transfers: 0,
+      is_lead: null, lead_stage: null,
     };
     setSelectedCustomer(synth);
     setCustomerQuery(t.full_name ? `${t.full_name} (${t.customer_id})` : t.customer_id);
@@ -881,7 +893,14 @@ function EditTaskModal({ task, agents, onClose, onSaved }: EditTaskModalProps) {
                     {customerOptions.map((c) => (
                       <button key={c.customer_id} type="button" onClick={() => onSelectCustomer(c)}
                               className="w-full px-3 py-2.5 text-left transition hover:bg-slate-50">
-                        <p className="truncate text-sm font-medium text-slate-800">{optionLabel(c)}</p>
+                        <p className="truncate text-sm font-medium text-slate-800 flex items-center gap-2">
+                          <span className="truncate">{optionLabel(c)}</span>
+                          {c.is_lead === 1 && (
+                            <span className="inline-flex items-center rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700 ring-1 ring-sky-200 shrink-0">
+                              Lead
+                            </span>
+                          )}
+                        </p>
                         <p className="truncate text-xs text-slate-500">{optionMeta(c)}</p>
                       </button>
                     ))}

@@ -19,6 +19,7 @@ export async function GET(req: NextRequest) {
     const search = searchParams.get("search");
     const referenceSearch = searchParams.get("reference_search");
     const phone = searchParams.get("phone");
+    const includeLeads = searchParams.get("include_leads") === "1";
     const page = Math.max(1, Number(searchParams.get("page") ?? 1));
     const limit = Math.min(200, Math.max(1, Number(searchParams.get("limit") ?? 50)));
     const offset = (page - 1) * limit;
@@ -32,9 +33,10 @@ export async function GET(req: NextRequest) {
         return jsonError("Not found", 404);
       }
       const phoneFenceClause = fence ? `AND ${fence.sql}` : "";
+      const phoneLeadClause = includeLeads ? "" : "AND (is_lead = 0 OR is_lead IS NULL)";
       const [rows] = await pool.execute<RowDataPacket[]>(
         `SELECT customer_id, full_name, email, phone_number, country,
-                registration_date, kyc_completion_date, risk_status,
+                registration_date, kyc_completion_date, risk_status, is_lead, lead_stage,
                 (SELECT COUNT(*) FROM transfers t WHERE t.customer_id = customers.customer_id) AS total_transfers
          FROM   customers
          WHERE  (
@@ -43,6 +45,7 @@ export async function GET(req: NextRequest) {
                OR REPLACE(REPLACE(REPLACE(phone_number,' ',''),'-',''),'+','') = ?
                OR RIGHT(REPLACE(REPLACE(REPLACE(phone_number,' ',''),'-',''),'+',''), 9) = ?
                )
+           ${phoneLeadClause}
            ${phoneFenceClause}
          LIMIT 1`,
         [normalized, last9, normalized, last9, ...(fence?.params ?? [])]
@@ -55,6 +58,10 @@ export async function GET(req: NextRequest) {
 
     const conditions: string[] = [];
     const params: (string | number)[] = [];
+
+    if (!includeLeads) {
+      conditions.push("(is_lead = 0 OR is_lead IS NULL)");
+    }
 
     if (country) {
       conditions.push("country = ?");
@@ -104,7 +111,7 @@ export async function GET(req: NextRequest) {
 
     const [rows] = await pool.execute<RowDataPacket[]>(
       `SELECT customer_id, full_name, email, phone_number, country,
-              registration_date, kyc_completion_date, risk_status,
+              registration_date, kyc_completion_date, risk_status, is_lead, lead_stage,
               (SELECT COUNT(*) FROM transfers t WHERE t.customer_id = customers.customer_id) AS total_transfers
        FROM customers
        ${where}
