@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ClipboardList,
   Plus,
@@ -1208,6 +1208,7 @@ const PAGE_SIZE = 50;
 export default function ToDoPage() {
   const { user } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [view, setView]             = useState<ViewTab>("mine");
   const [prevView, setPrevView]     = useState<Exclude<ViewTab, "results">>("mine");
@@ -1250,6 +1251,22 @@ export default function ToDoPage() {
       .then((data) => setAgents(Array.isArray(data) ? data : []))
       .catch(() => {});
   }, []);
+
+  // Deep link: ?taskId=N opens that task's edit modal regardless of current
+  // view/filter. Cleared from the URL after open so refresh doesn't re-trigger.
+  useEffect(() => {
+    const raw = searchParams?.get("taskId");
+    if (!raw) return;
+    const id = parseInt(raw, 10);
+    if (!id || isNaN(id)) return;
+    apiFetch(`/api/todos/${id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((res) => {
+        if (res?.task) setEditTarget(res.task);
+      })
+      .catch(() => {})
+      .finally(() => router.replace("/to-do"));
+  }, [searchParams, router]);
 
   // Load tasks
   const loadTasks = useCallback(() => {
