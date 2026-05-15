@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
     }
 
     if (transferReference) {
-      where.push(`t.transfer_reference = ?`);
+      where.push(`TRIM(t.transfer_reference) = ?`);
       params.push(transferReference);
     }
 
