@@ -161,6 +161,20 @@ export async function notifyAssignee(input: TaskAssignmentNotificationInput): Pr
   }
 
   await Promise.all(jobs);
+
+  // In-app inbox row (same dispatch — recipient already passed self-mute).
+  try {
+    const inAppType = eventType === "reassigned" ? "task_reassigned" : "task_assigned";
+    const inAppExcerpt = task.title.slice(0, 280);
+    await pool.execute(
+      `INSERT INTO notifications (user_id, type, task_id, actor_user_id, excerpt)
+       VALUES (?, ?, ?, ?, ?)`,
+      [recipientUserId, inAppType, taskId, actorUserId, inAppExcerpt]
+    );
+  } catch (inAppErr) {
+    const m = inAppErr instanceof Error ? inAppErr.message : String(inAppErr);
+    console.error(`[notifyAssignee] in-app insert failed for user ${recipientUserId}: ${m}`);
+  }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[notifyAssignee] unexpected error for task ${taskId} / user ${recipientUserId}: ${msg}`);
@@ -202,7 +216,6 @@ export async function notifyMentions(input: MentionNotificationInput): Promise<v
     const usable = recipients.filter(
       (r) => r.notify_mentions_email === 1 && !!r.email
     );
-    if (usable.length === 0) return;
 
     const [actorRows] = await pool.execute<ActorRow[]>(
       `SELECT name FROM users WHERE id = ? LIMIT 1`,
@@ -230,44 +243,100 @@ export async function notifyMentions(input: MentionNotificationInput): Promise<v
     const surroundingHtml = mentionsToEmailHtml(surroundingText);
 
     const apiKey = process.env.RESEND_API_KEY;
-    if (!apiKey) {
+    if (apiKey && usable.length > 0) {
+      const resend = new Resend(apiKey);
+      await Promise.all(
+        usable.map((recipient) =>
+          resend.emails
+            .send({
+              from: FROM,
+              to: recipient.email!,
+              subject: `You were mentioned on task: ${task.title}`,
+              react: MentionEmail({
+                recipientFirstName: firstName(recipient.name),
+                actorName,
+                surroundingHtml,
+                taskTitle: task.title,
+                customerName: customerLabel,
+                transferReference: task.transfer_reference,
+                priority: task.priority,
+                taskUrl,
+                source,
+              }),
+            })
+            .then((res) => {
+              if (res.error) {
+                console.error(`[notifyMentions] send error for user ${recipient.id}:`, res.error);
+              }
+            })
+            .catch((err: unknown) => {
+              const msg = err instanceof Error ? err.message : String(err);
+              console.error(`[notifyMentions] failed for user ${recipient.id}: ${msg}`);
+            })
+        )
+      );
+    } else if (!apiKey) {
       console.warn(`[notifyMentions] RESEND_API_KEY missing — skipping ${usable.length} email(s)`);
-      return;
     }
-    const resend = new Resend(apiKey);
 
-    await Promise.all(
-      usable.map((recipient) =>
-        resend.emails
-          .send({
-            from: FROM,
-            to: recipient.email!,
-            subject: `You were mentioned on task: ${task.title}`,
-            react: MentionEmail({
-              recipientFirstName: firstName(recipient.name),
-              actorName,
-              surroundingHtml,
-              taskTitle: task.title,
-              customerName: customerLabel,
-              transferReference: task.transfer_reference,
-              priority: task.priority,
-              taskUrl,
-              source,
-            }),
+    // In-app inbox rows for every mentioned recipient that survived the
+    // self-filter, regardless of email enablement or API key presence.
+    try {
+      const inAppExcerpt = surroundingText.slice(0, 280);
+      await Promise.all(
+        recipientIds.map((recipientId) =>
+          pool.execute(
+            `INSERT INTO notifications (user_id, type, task_id, actor_user_id, excerpt)
+             VALUES (?, 'mention', ?, ?, ?)`,
+            [recipientId, taskId, actorUserId, inAppExcerpt]
+          ).catch((inAppErr: unknown) => {
+            const m = inAppErr instanceof Error ? inAppErr.message : String(inAppErr);
+            console.error(`[notifyMentions] in-app insert failed for user ${recipientId}: ${m}`);
           })
-          .then((res) => {
-            if (res.error) {
-              console.error(`[notifyMentions] send error for user ${recipient.id}:`, res.error);
-            }
-          })
-          .catch((err: unknown) => {
-            const msg = err instanceof Error ? err.message : String(err);
-            console.error(`[notifyMentions] failed for user ${recipient.id}: ${msg}`);
-          })
-      )
-    );
+        )
+      );
+    } catch (inAppErr) {
+      const m = inAppErr instanceof Error ? inAppErr.message : String(inAppErr);
+      console.error(`[notifyMentions] in-app fan-out failed: ${m}`);
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[notifyMentions] unexpected error for task ${taskId}: ${msg}`);
+  }
+}
+
+export interface CommentOnAssignedInput {
+  taskId: number;
+  actorUserId: number;
+  alreadyMentioned: number[];
+  commentText: string;
+}
+
+interface AssigneeRow extends RowDataPacket {
+  assigned_agent_id: number | null;
+}
+
+export async function notifyCommentOnAssigned(input: CommentOnAssignedInput): Promise<void> {
+  const { taskId, actorUserId, alreadyMentioned, commentText } = input;
+
+  try {
+    const [rows] = await pool.execute<AssigneeRow[]>(
+      `SELECT assigned_agent_id FROM tasks WHERE id = ? LIMIT 1`,
+      [taskId]
+    );
+    const assigneeId = rows[0]?.assigned_agent_id ?? null;
+    if (assigneeId === null) return;
+    if (assigneeId === actorUserId) return;
+    if (alreadyMentioned.includes(assigneeId)) return;
+
+    const excerpt = commentText.slice(0, 280);
+    await pool.execute(
+      `INSERT INTO notifications (user_id, type, task_id, actor_user_id, excerpt)
+       VALUES (?, 'comment_on_assigned', ?, ?, ?)`,
+      [assigneeId, taskId, actorUserId, excerpt]
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[notifyCommentOnAssigned] failed for task ${taskId}: ${msg}`);
   }
 }
