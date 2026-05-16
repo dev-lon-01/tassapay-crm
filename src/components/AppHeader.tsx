@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/src/context/AuthContext";
+import { NotificationBell } from "@/src/components/notifications/NotificationBell";
 
 export function AppHeader() {
   const { user, isLoading } = useAuth();
@@ -28,6 +29,7 @@ export function AppHeader() {
             <span className="h-2 w-2 rounded-full bg-emerald-500" />
             <span className="text-xs font-semibold text-emerald-700">System Healthy</span>
           </div>
+          <NotificationBell />
           <div className="hidden text-right sm:block">
             {isLoading ? (
               <>
