@@ -2,6 +2,8 @@ import { Resend } from "resend";
 import { pool } from "@/src/lib/db";
 import { sendPushoverAlert } from "@/src/lib/pushover";
 import { TaskAssignedEmail } from "@/emails/TaskAssignedEmail";
+import { MentionEmail } from "@/emails/MentionEmail";
+import { mentionsToEmailHtml } from "@/src/lib/mentions";
 import type { RowDataPacket } from "mysql2";
 
 const FROM = `${process.env.RESEND_FROM_NAME ?? "TassaPay"} <${process.env.RESEND_FROM_EMAIL ?? "noreply@tassapay.com"}>`;
@@ -162,5 +164,110 @@ export async function notifyAssignee(input: TaskAssignmentNotificationInput): Pr
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[notifyAssignee] unexpected error for task ${taskId} / user ${recipientUserId}: ${msg}`);
+  }
+}
+
+export type MentionSource = "comment" | "resolution" | "task_description";
+
+export interface MentionNotificationInput {
+  taskId: number;
+  actorUserId: number;
+  mentionedUserIds: number[];
+  source: MentionSource;
+  surroundingText: string;
+}
+
+interface MentionRecipientRow extends RowDataPacket {
+  id: number;
+  name: string | null;
+  email: string | null;
+  notify_mentions_email: number;
+}
+
+export async function notifyMentions(input: MentionNotificationInput): Promise<void> {
+  const { taskId, actorUserId, mentionedUserIds, source, surroundingText } = input;
+
+  try {
+    const recipientIds = mentionedUserIds.filter((id) => id !== actorUserId);
+    if (recipientIds.length === 0) return;
+
+    const placeholders = recipientIds.map(() => "?").join(", ");
+    const [recipients] = await pool.execute<MentionRecipientRow[]>(
+      `SELECT id, name, email, notify_mentions_email
+       FROM users
+       WHERE id IN (${placeholders})`,
+      recipientIds
+    );
+
+    const usable = recipients.filter(
+      (r) => r.notify_mentions_email === 1 && !!r.email
+    );
+    if (usable.length === 0) return;
+
+    const [actorRows] = await pool.execute<ActorRow[]>(
+      `SELECT name FROM users WHERE id = ? LIMIT 1`,
+      [actorUserId]
+    );
+    const actorName = actorRows[0]?.name ?? "A teammate";
+
+    const [taskRows] = await pool.execute<TaskRow[]>(
+      `SELECT t.id, t.title, t.description, t.category, t.priority,
+              t.transfer_reference, t.customer_id,
+              c.full_name AS customer_name
+       FROM tasks t
+       LEFT JOIN customers c ON c.customer_id = t.customer_id
+       WHERE t.id = ? LIMIT 1`,
+      [taskId]
+    );
+    const task = taskRows[0];
+    if (!task) {
+      console.warn(`[notifyMentions] task ${taskId} not found`);
+      return;
+    }
+
+    const taskUrl = `${APP_BASE_URL}/to-do?taskId=${task.id}`;
+    const customerLabel = task.customer_name ?? task.customer_id;
+    const surroundingHtml = mentionsToEmailHtml(surroundingText);
+
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) {
+      console.warn(`[notifyMentions] RESEND_API_KEY missing — skipping ${usable.length} email(s)`);
+      return;
+    }
+    const resend = new Resend(apiKey);
+
+    await Promise.all(
+      usable.map((recipient) =>
+        resend.emails
+          .send({
+            from: FROM,
+            to: recipient.email!,
+            subject: `You were mentioned on task: ${task.title}`,
+            react: MentionEmail({
+              recipientFirstName: firstName(recipient.name),
+              actorName,
+              surroundingHtml,
+              taskTitle: task.title,
+              customerName: customerLabel,
+              transferReference: task.transfer_reference,
+              priority: task.priority,
+              taskUrl,
+              source,
+            }),
+          })
+          .then((res) => {
+            if (res.error) {
+              console.error(`[notifyMentions] send error for user ${recipient.id}:`, res.error);
+            }
+          })
+          .catch((err: unknown) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.error(`[notifyMentions] failed for user ${recipient.id}: ${msg}`);
+          })
+      )
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[notifyMentions] unexpected error for task ${taskId}: ${msg}`);
   }
 }
