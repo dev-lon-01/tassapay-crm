@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/src/lib/db";
 import { requireAuth } from "@/src/lib/auth";
-import { notifyAssignee } from "@/src/lib/taskNotifications";
+import { notifyAssignee, notifyMentions } from "@/src/lib/taskNotifications";
+import { extractMentionedUserIds } from "@/src/lib/mentions";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
 
 /**
@@ -232,6 +233,17 @@ export async function POST(req: NextRequest) {
         actorUserId: auth.id,
         eventType: "assigned",
       }).catch((err) => console.error("[POST /api/todos] notify failed:", err));
+    }
+
+    const descriptionMentions = extractMentionedUserIds(description);
+    if (descriptionMentions.length > 0) {
+      notifyMentions({
+        taskId: insertId,
+        actorUserId: auth.id,
+        mentionedUserIds: descriptionMentions,
+        source: "task_description",
+        surroundingText: description ?? "",
+      }).catch((err) => console.error("[POST /api/todos] notifyMentions failed:", err));
     }
 
     return NextResponse.json(firstRow, { status: 201 });

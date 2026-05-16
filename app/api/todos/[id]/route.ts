@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/src/lib/db";
 import { requireAuth } from "@/src/lib/auth";
-import { notifyAssignee } from "@/src/lib/taskNotifications";
+import { notifyAssignee, notifyMentions } from "@/src/lib/taskNotifications";
+import { extractMentionedUserIds } from "@/src/lib/mentions";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
 
 /**
@@ -212,6 +213,17 @@ export async function PATCH(
         `INSERT INTO task_comments (task_id, agent_id, comment, kind) VALUES (?, ?, ?, 'close_resolution')`,
         [taskId, auth.id, resolution_comment.trim()]
       );
+
+      const resolutionMentions = extractMentionedUserIds(resolution_comment);
+      if (resolutionMentions.length > 0) {
+        notifyMentions({
+          taskId,
+          actorUserId: auth.id,
+          mentionedUserIds: resolutionMentions,
+          source: "resolution",
+          surroundingText: resolution_comment.trim(),
+        }).catch((err) => console.error("[PATCH /api/todos/:id] notifyMentions failed:", err));
+      }
     }
 
     // Return updated task with joined names

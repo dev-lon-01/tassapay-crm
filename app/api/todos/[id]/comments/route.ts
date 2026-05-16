@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/src/lib/db";
 import { requireAuth } from "@/src/lib/auth";
+import { notifyMentions } from "@/src/lib/taskNotifications";
+import { extractMentionedUserIds } from "@/src/lib/mentions";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
 
 /**
@@ -91,6 +93,17 @@ export async function POST(
        WHERE tc.id = ?`,
       [result.insertId]
     );
+
+    const mentionedIds = extractMentionedUserIds(comment);
+    if (mentionedIds.length > 0) {
+      notifyMentions({
+        taskId,
+        actorUserId: auth.id,
+        mentionedUserIds: mentionedIds,
+        source: "comment",
+        surroundingText: comment.trim(),
+      }).catch((err) => console.error("[POST /api/todos/:id/comments] notifyMentions failed:", err));
+    }
 
     return NextResponse.json(newRows[0], { status: 201 });
   } catch (err) {
