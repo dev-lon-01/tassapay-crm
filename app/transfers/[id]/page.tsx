@@ -14,6 +14,7 @@ interface TransferDetail {
   transaction_ref: string | null;
   data_field_id: string | null;
   created_at: string | null;
+  tayo_date_paid: string | null;
   send_amount: number | null;
   send_currency: string | null;
   receive_amount: number | null;
@@ -230,6 +231,7 @@ export default function TransferDetailPage({ params }: { params: { id: string } 
         <StatCard label="Receive Amount" value={formatAmount(transfer.receive_amount, transfer.receive_currency)} />
         <StatCard label="Beneficiary" value={transfer.beneficiary_name ?? "-"} />
         <StatCard label="Created" value={formatDate(transfer.created_at)} />
+        <StatCard label="Deposited" value={formatDate(transfer.tayo_date_paid)} />
       </div>
 
       <AccountVerificationsList

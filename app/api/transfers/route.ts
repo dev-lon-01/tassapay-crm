@@ -106,7 +106,7 @@ export async function GET(req: NextRequest) {
     );
 
     const [rows] = await pool.execute<RowDataPacket[]>(
-      `SELECT t.id, t.transaction_ref, t.data_field_id, t.created_at,
+      `SELECT t.id, t.transaction_ref, t.data_field_id, t.created_at, t.tayo_date_paid,
               t.send_amount, t.send_currency,
               t.receive_amount, t.receive_currency,
               t.destination_country, t.beneficiary_name,

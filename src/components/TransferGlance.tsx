@@ -12,6 +12,8 @@ interface TransferDetailResponse {
   receive_currency: string | null;
   beneficiary_name: string | null;
   data_field_id: string | null;
+  created_at: string | null;
+  tayo_date_paid: string | null;
 }
 
 interface TransferGlanceData {
@@ -22,6 +24,20 @@ interface TransferGlanceData {
   receiveCurrency: string | null;
   beneficiaryName: string | null;
   tayoRef: string | null;
+  createdAt: string | null;
+  tayoDatePaid: string | null;
+}
+
+function formatDateTime(iso: string | null): string | null {
+  if (!iso) return null;
+  return new Date(iso).toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
 export interface TransferGlanceProps {
@@ -62,6 +78,8 @@ export function TransferGlance({ transferId }: TransferGlanceProps) {
           receiveCurrency: t.receive_currency,
           beneficiaryName: t.beneficiary_name,
           tayoRef: t.data_field_id,
+          createdAt: t.created_at,
+          tayoDatePaid: t.tayo_date_paid,
         });
         setPhase("ready");
       })
@@ -112,6 +130,20 @@ export function TransferGlance({ transferId }: TransferGlanceProps) {
           </>
         )}
       </div>
+      {(data.createdAt || data.tayoDatePaid) && (
+        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
+          {data.createdAt && (
+            <span>
+              <span className="text-slate-400">Created:</span> {formatDateTime(data.createdAt)}
+            </span>
+          )}
+          {data.tayoDatePaid && (
+            <span className="text-emerald-600">
+              <span className="text-emerald-500/70">Deposited:</span> {formatDateTime(data.tayoDatePaid)}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

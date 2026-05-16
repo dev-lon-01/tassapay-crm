@@ -13,6 +13,7 @@ interface ApiTransfer {
   transaction_ref: string | null;
   data_field_id: string | null;
   created_at: string;
+  tayo_date_paid: string | null;
   send_amount: number | null;
   send_currency: string | null;
   receive_amount: number | null;
@@ -313,7 +314,14 @@ function TransferCard({ transfer }: { transfer: ApiTransfer }) {
         <span className="font-semibold text-slate-700">
           {formatAmount(transfer.send_amount, transfer.send_currency)}
         </span>
-        <span>{formatDateTime(transfer.created_at)}</span>
+        <div className="flex flex-col items-end leading-tight">
+          <span>{formatDateTime(transfer.created_at)}</span>
+          {transfer.tayo_date_paid && (
+            <span className="text-[10px] text-emerald-600">
+              Deposited {formatDateTime(transfer.tayo_date_paid)}
+            </span>
+          )}
+        </div>
       </div>
     </article>
   );
@@ -329,7 +337,14 @@ function TransferRow({ transfer }: { transfer: ApiTransfer }) {
       onClick={() => router.push(`/transfers/${transfer.id}`)}
     >
       <td className="whitespace-nowrap py-3 pl-5 pr-3 text-xs text-slate-500">
-        {formatDateTime(transfer.created_at)}
+        <div className="flex flex-col leading-tight">
+          <span>{formatDateTime(transfer.created_at)}</span>
+          {transfer.tayo_date_paid && (
+            <span className="text-[10px] text-emerald-600">
+              Deposited {formatDateTime(transfer.tayo_date_paid)}
+            </span>
+          )}
+        </div>
       </td>
       <td className="px-3 py-3 font-mono text-xs text-slate-700">
         {transfer.transaction_ref ?? <span className="italic text-slate-400">{EMPTY_VALUE}</span>}

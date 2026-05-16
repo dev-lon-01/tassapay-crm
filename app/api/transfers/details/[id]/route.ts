@@ -13,6 +13,7 @@ interface TransferDetailRow extends RowDataPacket {
   transaction_ref: string | null;
   data_field_id: string | null;
   created_at: string | null;
+  tayo_date_paid: string | null;
   send_amount: number | null;
   send_currency: string | null;
   receive_amount: number | null;
@@ -60,6 +61,7 @@ export async function GET(
               t.transaction_ref,
               t.data_field_id,
               t.created_at,
+              t.tayo_date_paid,
               t.send_amount,
               t.send_currency,
               t.receive_amount,
