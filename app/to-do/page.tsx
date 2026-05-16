@@ -24,6 +24,8 @@ import {
 import { apiFetch } from "@/src/lib/apiFetch";
 import { useAuth } from "@/src/context/AuthContext";
 import { TransferGlance } from "@/src/components/TransferGlance";
+import { MentionTextarea } from "@/src/components/MentionTextarea";
+import { RenderText } from "@/src/components/Mentions";
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
@@ -571,12 +573,13 @@ function CreateTaskModal({ agents, onClose, onCreated }: CreateTaskModalProps) {
           </div>
           <div>
             <label className="mb-1 block text-xs font-semibold text-slate-600">Description</label>
-            <textarea
+            <MentionTextarea
               className={`${inputCls} resize-none`}
               rows={3}
-              placeholder="Optional — add any relevant context"
+              placeholder="Optional — add any relevant context (use @ to mention)"
               value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              onChange={(v) => setForm({ ...form, description: v })}
+              agents={agents}
             />
           </div>
           <div className="flex justify-end gap-3 pt-1">
@@ -598,11 +601,12 @@ function CreateTaskModal({ agents, onClose, onCreated }: CreateTaskModalProps) {
 
 interface CloseTaskModalProps {
   task: Task;
+  agents: Agent[];
   onClose: () => void;
   onClosed: (task: Task) => void;
 }
 
-function CloseTaskModal({ task, onClose, onClosed }: CloseTaskModalProps) {
+function CloseTaskModal({ task, agents, onClose, onClosed }: CloseTaskModalProps) {
   const [form, setForm] = useState({
     transfer_reference: task.transfer_reference || "",
   });
@@ -672,13 +676,14 @@ function CloseTaskModal({ task, onClose, onClosed }: CloseTaskModalProps) {
             <label className="mb-1 block text-xs font-semibold text-slate-600">
               Final Resolution <span className="text-red-500">*</span>
             </label>
-            <textarea
+            <MentionTextarea
               autoFocus
               className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 resize-none"
               rows={4}
-              placeholder="Describe how this task was resolved…"
+              placeholder="Describe how this task was resolved… (use @ to mention)"
               value={comment}
-              onChange={(e) => setComment(e.target.value)}
+              onChange={setComment}
+              agents={agents}
             />
           </div>
           <div className="flex justify-end gap-3 pt-1">
@@ -1079,9 +1084,11 @@ function EditTaskModal({ task, agents, onClose, onSaved }: EditTaskModalProps) {
           {/* Description */}
           <div>
             <label className="mb-1 block text-xs font-semibold text-slate-600">Description</label>
-            <textarea className={`${inputCls} resize-none`} rows={3}
+            <MentionTextarea className={`${inputCls} resize-none`} rows={3}
+                      placeholder="(use @ to mention)"
                       value={form.description}
-                      onChange={(e) => setForm({ ...form, description: e.target.value })} />
+                      onChange={(v) => setForm({ ...form, description: v })}
+                      agents={agents} />
           </div>
 
           <div className="flex justify-end gap-3 pt-1">
@@ -1126,7 +1133,7 @@ function CommentsList({ taskId, commentKey }: { taskId: number; commentKey: numb
           <span className="font-medium text-slate-500">{c.agent_name ?? "Agent"}</span>
           <span className="mx-1.5 text-slate-300">·</span>
           <span className="text-slate-400">{formatDateTime(c.created_at)}</span>
-          <p className="mt-0.5 text-slate-700">{c.comment}</p>
+          <p className="mt-0.5 text-slate-700"><RenderText text={c.comment} /></p>
         </li>
       ))}
     </ul>
@@ -1137,10 +1144,11 @@ function CommentsList({ taskId, commentKey }: { taskId: number; commentKey: numb
 
 interface AddCommentProps {
   taskId: number;
+  agents: Agent[];
   onAdded: () => void;
 }
 
-function AddCommentInline({ taskId, onAdded }: AddCommentProps) {
+function AddCommentInline({ taskId, agents, onAdded }: AddCommentProps) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [saving, setSaving] = useState(false);
@@ -1172,14 +1180,17 @@ function AddCommentInline({ taskId, onAdded }: AddCommentProps) {
 
   return (
     <form onSubmit={submit} className="mt-2 flex gap-2 items-start">
-      <textarea
-        autoFocus
-        rows={2}
-        className="flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 resize-none"
-        placeholder="e.g. Called bank, emailed customer…"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-      />
+      <div className="flex-1">
+        <MentionTextarea
+          autoFocus
+          rows={2}
+          className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 resize-none"
+          placeholder="e.g. Called bank, emailed customer… (use @ to mention)"
+          value={text}
+          onChange={setText}
+          agents={agents}
+        />
+      </div>
       <div className="flex flex-col gap-1">
         <button type="submit" disabled={saving || !text.trim()}
                 className="rounded-lg bg-indigo-600 px-2 py-1.5 text-xs text-white hover:bg-indigo-700 disabled:opacity-50">
@@ -1398,6 +1409,7 @@ export default function ToDoPage() {
                   <TaskRow
                     key={task.id}
                     task={task}
+                    agents={agents}
                     onClose={() => setCloseTarget(task)}
                     onEdit={() => setEditTarget(task)}
                     onCommentAdded={() => setRefreshTick((t) => t + 1)}
@@ -1422,6 +1434,7 @@ export default function ToDoPage() {
               <MobileTaskCard
                 key={task.id}
                 task={task}
+                agents={agents}
                 onClose={() => setCloseTarget(task)}
                 onEdit={() => setEditTarget(task)}
                 onCommentAdded={() => setRefreshTick((t) => t + 1)}
@@ -1479,6 +1492,7 @@ export default function ToDoPage() {
       {closeTarget && (
         <CloseTaskModal
           task={closeTarget}
+          agents={agents}
           onClose={() => setCloseTarget(null)}
           onClosed={handleClosed}
         />
@@ -1499,13 +1513,14 @@ export default function ToDoPage() {
 
 interface TaskRowProps {
   task: Task;
+  agents: Agent[];
   onClose: () => void;
   onEdit: () => void;
   onCommentAdded: () => void;
   onNavigateCustomer: () => void;
 }
 
-function TaskRow({ task, onClose, onEdit, onCommentAdded, onNavigateCustomer }: TaskRowProps) {
+function TaskRow({ task, agents, onClose, onEdit, onCommentAdded, onNavigateCustomer }: TaskRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [commentKey, setCommentKey] = useState(0);
 
@@ -1524,7 +1539,7 @@ function TaskRow({ task, onClose, onEdit, onCommentAdded, onNavigateCustomer }: 
         <td className="py-3 px-3 max-w-[220px]">
           <p className="truncate text-sm font-medium text-slate-800">{task.title}</p>
           {task.description && (
-            <p className="mt-0.5 truncate text-xs text-slate-400">{task.description}</p>
+            <p className="mt-0.5 truncate text-xs text-slate-400"><RenderText text={task.description} /></p>
           )}
         </td>
         <td className="py-3 px-3">
@@ -1569,7 +1584,7 @@ function TaskRow({ task, onClose, onEdit, onCommentAdded, onNavigateCustomer }: 
         <tr className="border-t border-slate-100 bg-slate-50/40">
           <td colSpan={8} className="px-5 py-3">
             {task.description && (
-              <p className="mb-2 text-sm text-slate-600">{task.description}</p>
+              <p className="mb-2 text-sm text-slate-600"><RenderText text={task.description} /></p>
             )}
             {task.transfer_reference && (
               <a
@@ -1582,7 +1597,7 @@ function TaskRow({ task, onClose, onEdit, onCommentAdded, onNavigateCustomer }: 
             )}
             {task.transfer_id != null && <TransferGlance transferId={task.transfer_id} />}
             <CommentsList taskId={task.id} commentKey={commentKey} />
-            <AddCommentInline taskId={task.id} onAdded={handleCommentAdded} />
+            <AddCommentInline taskId={task.id} agents={agents} onAdded={handleCommentAdded} />
           </td>
         </tr>
       )}
@@ -1592,7 +1607,7 @@ function TaskRow({ task, onClose, onEdit, onCommentAdded, onNavigateCustomer }: 
 
 // ─── MobileTaskCard ───────────────────────────────────────────────────────────
 
-function MobileTaskCard({ task, onClose, onEdit, onCommentAdded, onNavigateCustomer }: TaskRowProps) {
+function MobileTaskCard({ task, agents, onClose, onEdit, onCommentAdded, onNavigateCustomer }: TaskRowProps) {
   const [commentKey, setCommentKey] = useState(0);
   const [showGlance, setShowGlance] = useState(false);
 
@@ -1650,7 +1665,7 @@ function MobileTaskCard({ task, onClose, onEdit, onCommentAdded, onNavigateCusto
       )}
       <CommentsList taskId={task.id} commentKey={commentKey} />
       <div className="flex items-center gap-2 border-t border-slate-100 pt-2.5">
-        <AddCommentInline taskId={task.id} onAdded={handleCommentAdded} />
+        <AddCommentInline taskId={task.id} agents={agents} onAdded={handleCommentAdded} />
         <div className="ml-auto flex items-center gap-2">
           <button
             onClick={onEdit}
