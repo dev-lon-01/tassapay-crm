@@ -119,6 +119,109 @@ interface TaskComment {
   created_at: string;
 }
 
+interface IdDocument {
+  id: number;
+  sender_id_id: string;
+  customer_id: string;
+  id_type: string | null;
+  id_name: string | null;
+  id_number: string | null;
+  sender_name_on_id: string | null;
+  place_of_issue: string | null;
+  issue_date: string | null;
+  expiry_date: string | null;
+  dob: string | null;
+  front_image_path: string | null;
+  back_image_path: string | null;
+  pdf_path: string | null;
+  journey_id: string | null;
+  is_legacy: number;
+  verified: number;
+  verified_by: string | null;
+  verified_date: string | null;
+  comments: string | null;
+  source_inserted_at: string | null;
+}
+
+const TASSAPAY_ASSET_BASE = "https://tassapay.co.uk/backoffice/";
+function assetUrl(relativePath: string | null): string | null {
+  if (!relativePath) return null;
+  return TASSAPAY_ASSET_BASE + encodeURI(relativePath);
+}
+
+function IdDocumentsSection({ customerId }: { customerId: string }) {
+  const [docs, setDocs] = useState<IdDocument[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch(`/api/customers/${customerId}/id-documents`)
+      .then((r) => (r.ok ? r.json() : { data: [] }))
+      .then((body) => { if (!cancelled) setDocs(Array.isArray(body?.data) ? body.data : []); })
+      .catch(() => { if (!cancelled) setDocs([]); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [customerId]);
+
+  if (loading) {
+    return <div className="rounded-2xl border border-slate-200 bg-white p-4 text-xs text-slate-400">Loading ID documents…</div>;
+  }
+  if (docs.length === 0) {
+    return <div className="rounded-2xl border border-slate-200 bg-white p-4 text-xs text-slate-400">No ID documents on file.</div>;
+  }
+
+  return (
+    <div className="space-y-3">
+      {docs.map((d) => (
+        <div key={d.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-2 flex items-center gap-2">
+            <h4 className="text-sm font-semibold text-slate-800">{d.id_name ?? "Identity document"}</h4>
+            {d.is_legacy === 1 ? (
+              <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-amber-200">Legacy</span>
+            ) : (
+              <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-emerald-200">Verified via Sumsub</span>
+            )}
+          </div>
+
+          <div className="grid gap-x-4 gap-y-1 text-xs md:grid-cols-2">
+            <div><span className="text-slate-500">Number:</span> <span className="font-medium text-slate-800">{d.id_number ?? "-"}</span></div>
+            <div><span className="text-slate-500">Name on ID:</span> <span className="font-medium text-slate-800">{d.sender_name_on_id ?? "-"}</span></div>
+            <div><span className="text-slate-500">Place of issue:</span> <span className="font-medium text-slate-800">{d.place_of_issue ?? "-"}</span></div>
+            <div><span className="text-slate-500">Issue date:</span> <span className="font-medium text-slate-800">{d.issue_date ?? "-"}</span></div>
+            <div><span className="text-slate-500">Expiry:</span> <span className="font-medium text-slate-800">{d.expiry_date ? d.expiry_date.slice(0, 10) : "-"}</span></div>
+            <div><span className="text-slate-500">DOB:</span> <span className="font-medium text-slate-800">{d.dob ? d.dob.slice(0, 10) : "-"}</span></div>
+            {d.comments && <div className="md:col-span-2"><span className="text-slate-500">Comments:</span> <span className="text-slate-700">{d.comments}</span></div>}
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            {assetUrl(d.front_image_path) && (
+              <a href={assetUrl(d.front_image_path)!} target="_blank" rel="noopener noreferrer" className="inline-block">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={assetUrl(d.front_image_path)!} alt="Front of ID" className="h-20 w-32 rounded border border-slate-200 object-cover hover:opacity-80" />
+              </a>
+            )}
+            {assetUrl(d.back_image_path) && (
+              <a href={assetUrl(d.back_image_path)!} target="_blank" rel="noopener noreferrer" className="inline-block">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={assetUrl(d.back_image_path)!} alt="Back of ID" className="h-20 w-32 rounded border border-slate-200 object-cover hover:opacity-80" />
+              </a>
+            )}
+            {assetUrl(d.pdf_path) && (
+              <a href={assetUrl(d.pdf_path)!} target="_blank" rel="noopener noreferrer"
+                 className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50">View PDF</a>
+            )}
+          </div>
+
+          <div className="mt-3 text-[11px] text-slate-400">
+            {d.verified ? `Verified${d.verified_by ? ` by ${d.verified_by}` : ""}${d.verified_date ? ` on ${d.verified_date.slice(0, 16).replace("T", " ")}` : ""}` : "Pending verification"}
+            {d.source_inserted_at && ` · Recorded ${d.source_inserted_at.slice(0, 16).replace("T", " ")}`}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function formatRelative(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const minutes = Math.floor(diff / 60000);
@@ -715,6 +818,11 @@ export default function CustomerProfilePage({
         }}
         onAttached={() => setVerificationsKey((k) => k + 1)}
       />
+
+      <section className="space-y-3">
+        <h3 className="text-sm font-semibold text-slate-700">Identity Documents</h3>
+        <IdDocumentsSection customerId={customer.customer_id} />
+      </section>
 
       <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
         <div className="mb-4 flex items-center justify-between">

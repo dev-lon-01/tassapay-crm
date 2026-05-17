@@ -78,6 +78,9 @@ interface SyncPanelProps {
   onSyncComplete: () => void;
   accentClass: string;
   btnClass: string;
+  idPullEndpoint?: string;
+  idPullLabel?: string;
+  idPullCheckboxLabel?: string;
 }
 
 function SyncPanel({
@@ -88,18 +91,25 @@ function SyncPanel({
   onSyncComplete,
   accentClass,
   btnClass,
+  idPullEndpoint,
+  idPullLabel,
+  idPullCheckboxLabel,
 }: SyncPanelProps) {
   const [fromDate, setFromDate] = useState(daysAgoISO(30));
   const [toDate, setToDate] = useState(todayISO());
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<SyncResult | null>(null);
+  const [idPullMode, setIdPullMode] = useState(false);
 
   async function runSync() {
     setLoading(true);
     setResult(null);
     try {
       const params = new URLSearchParams({ fromDate, toDate });
-      const res = await apiFetch(`${endpoint}?${params}`, { method: "POST" });
+      const url = idPullMode && idPullEndpoint
+        ? `${idPullEndpoint}?${params}`
+        : `${endpoint}?${params}`;
+      const res = await apiFetch(url, { method: "POST" });
       const data: SyncResult = await res.json();
       setResult(data);
       if (!data.error) onSyncComplete();
@@ -154,6 +164,18 @@ function SyncPanel({
         </div>
       </div>
 
+      {idPullEndpoint && (
+        <label className="mt-3 flex items-center gap-2 text-xs font-medium text-slate-600 cursor-pointer">
+          <input
+            type="checkbox"
+            className="h-3.5 w-3.5 rounded border-slate-300 text-emerald-500 focus:ring-emerald-400"
+            checked={idPullMode}
+            onChange={(e) => setIdPullMode(e.target.checked)}
+          />
+          {idPullCheckboxLabel ?? "Pull legacy ID documents instead of customer profiles"}
+        </label>
+      )}
+
       <button
         onClick={runSync}
         disabled={loading}
@@ -162,12 +184,12 @@ function SyncPanel({
         {loading ? (
           <>
             <Loader2 className="h-4 w-4 animate-spin" />
-            Syncing...
+            {idPullMode && idPullLabel ? `${idPullLabel}…` : "Syncing..."}
           </>
         ) : (
           <>
             <RefreshCw className="h-4 w-4" />
-            Start Sync
+            {idPullMode && idPullLabel ? idPullLabel : "Start Sync"}
           </>
         )}
       </button>
@@ -290,6 +312,9 @@ export default function SyncPage() {
           description="Fetches customer records from the backoffice Customer search API."
           icon={<Users className="h-5 w-5" />}
           endpoint="/api/sync/customers"
+          idPullEndpoint="/api/sync/customer-ids"
+          idPullLabel="Pull ID Documents"
+          idPullCheckboxLabel="Pull legacy ID documents instead of customer profiles"
           onSyncComplete={fetchLogs}
           accentClass="border-blue-300"
           btnClass="bg-blue-600 hover:bg-blue-700"
