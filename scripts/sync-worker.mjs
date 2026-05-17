@@ -136,6 +136,126 @@ function splitList(raw) {
   return raw.split(",").map((s) => s.trim()).filter(Boolean);
 }
 
+// ── customer ID documents helpers ──────────────────────────────────────────────
+const SUMSUB_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isLegacyId(journeyId) {
+  if (!journeyId) return 1;
+  return SUMSUB_UUID.test(String(journeyId).trim()) ? 0 : 1;
+}
+
+function strOrNull(v) {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim();
+  if (s === "" || s === "-") return null;
+  return s;
+}
+
+function num01(v) {
+  return v === "1" || v === 1 || v === true ? 1 : 0;
+}
+
+function parseDateOnly(raw) {
+  const parsed = parseDateField(raw);
+  if (!parsed) return null;
+  return parsed.slice(0, 10);
+}
+
+const ID_DOC_UPSERT_SQL = `
+INSERT INTO customer_id_documents
+  (sender_id_id, customer_id, id_type, id_name, id_number,
+   sender_name_on_id, place_of_issue, issue_date, expiry_date, dob,
+   front_image_path, back_image_path, pdf_path,
+   mrz_number, journey_id, is_legacy, verified, verified_by, verified_date,
+   comments, source_inserted_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON DUPLICATE KEY UPDATE
+  customer_id        = VALUES(customer_id),
+  id_type            = VALUES(id_type),
+  id_name            = VALUES(id_name),
+  id_number          = VALUES(id_number),
+  sender_name_on_id  = VALUES(sender_name_on_id),
+  place_of_issue     = VALUES(place_of_issue),
+  issue_date         = VALUES(issue_date),
+  expiry_date        = VALUES(expiry_date),
+  dob                = VALUES(dob),
+  front_image_path   = VALUES(front_image_path),
+  back_image_path    = VALUES(back_image_path),
+  pdf_path           = VALUES(pdf_path),
+  mrz_number         = VALUES(mrz_number),
+  journey_id         = VALUES(journey_id),
+  is_legacy          = VALUES(is_legacy),
+  verified           = VALUES(verified),
+  verified_by        = VALUES(verified_by),
+  verified_date      = VALUES(verified_date),
+  comments           = VALUES(comments),
+  source_inserted_at = VALUES(source_inserted_at),
+  synced_at          = CURRENT_TIMESTAMP
+`;
+
+async function fetchAndUpsertCustomerIds(conn, auth, customerId) {
+  const { ld, cookieHeader } = auth;
+  let body;
+  try {
+    const res = await fetch(`${BASE}/CustomerHandler.ashx/?Task=IDdocuments_bind_grid`, {
+      method: "POST",
+      headers: {
+        ...HEADERS,
+        "content-type": "application/json;",
+        referer:        "https://tassapay.co.uk/backoffice/IdDocs.aspx",
+        cookie:         cookieHeader,
+      },
+      body: JSON.stringify({ Param: [{
+        Branch_ID: "1", User_ID: ld.User_ID, Client_ID: ld.Client_ID,
+        Username: ld.Name, cid: customerId,
+      }] }),
+    });
+    body = await res.json();
+  } catch (err) {
+    console.error(`[CustomerIds] fetch failed for ${customerId}:`, err.message ?? err);
+    return { fetched: 0, upserted: 0, errors: 1 };
+  }
+
+  if (!Array.isArray(body)) return { fetched: 0, upserted: 0, errors: 0 };
+
+  let upserted = 0, errors = 0;
+  for (const row of body) {
+    const senderIdId = strOrNull(row.SenderID_ID);
+    if (!senderIdId) continue;
+    try {
+      await conn.execute(ID_DOC_UPSERT_SQL, [
+        senderIdId,
+        customerId,
+        strOrNull(row.ID_Type),
+        strOrNull(row.ID_Name),
+        strOrNull(row.SenderID_Number),
+        strOrNull(row.SenderNameOnID),
+        strOrNull(row.SenderID_PlaceOfIssue),
+        parseDateOnly(row.Issue_Date),
+        parseDateField(row.SenderID_ExpiryDate),
+        parseDateField(row.Sender_DateOfBirth),
+        strOrNull(row.FileNameWithExt),
+        strOrNull(row.BackID_Document),
+        strOrNull(row.PDF_FileName),
+        strOrNull(row.MRZ_number),
+        strOrNull(row.JourneyID),
+        isLegacyId(row.JourneyID),
+        num01(row.Verfied),
+        strOrNull(row.Verified_By),
+        parseDateField(row.Verified_Date),
+        strOrNull(row.comments),
+        parseDateField(row.Record_Insert_DateTime),
+      ]);
+      upserted++;
+    } catch (err) {
+      console.error(`[CustomerIds] upsert failed for ${senderIdId}:`, err.message ?? err);
+      errors++;
+    }
+  }
+
+  return { fetched: body.length, upserted, errors };
+}
+
 // â”€â”€ TassaPay Backoffice Login â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function loginToBackoffice() {
   const lr = await fetch(`${BASE}/LoginHandler.ashx?Task=1`, {
@@ -243,8 +363,18 @@ async function syncCustomers() {
         parseDateField(c.Record_Insert_DateTime),
         str(c.Risk_status),
       ]);
-      if (res.affectedRows === 1) inserted++;
-      else if (res.affectedRows === 2) updated++;
+      if (res.affectedRows === 1) {
+        inserted++;
+        // New customer — also pull their ID documents (rate-limited)
+        try {
+          await fetchAndUpsertCustomerIds(conn, { ld, cookieHeader }, String(c.Customer_ID).trim());
+          await new Promise((r) => setTimeout(r, 750));
+        } catch (e) {
+          console.error("[CustomerIds] fan-out failed:", e.message ?? e);
+        }
+      } else if (res.affectedRows === 2) {
+        updated++;
+      }
     }
     await logDone(logId, customers.length, inserted, updated);
   } catch (err) {
@@ -291,8 +421,14 @@ async function syncTransfers() {
        receive_amount, receive_currency,
        destination_country, beneficiary_name,
        status, hold_reason,
-       payment_method, delivery_method)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       payment_method, delivery_method,
+       sender_name, email_id, purpose,
+       transfer_fees, amount_in_gbp, exchange_rate,
+       branch, delivery_type, api_branch_details,
+       beneficiary_id, beneficiary_mobile,
+       benf_account_holder_name, benf_account_number, benf_bank_name, benf_street)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON DUPLICATE KEY UPDATE
       customer_id         = VALUES(customer_id),
       created_at          = VALUES(created_at),
@@ -306,6 +442,21 @@ async function syncTransfers() {
       hold_reason         = VALUES(hold_reason),
       payment_method      = VALUES(payment_method),
       delivery_method     = VALUES(delivery_method),
+      sender_name              = VALUES(sender_name),
+      email_id                 = VALUES(email_id),
+      purpose                  = VALUES(purpose),
+      transfer_fees            = VALUES(transfer_fees),
+      amount_in_gbp            = VALUES(amount_in_gbp),
+      exchange_rate            = VALUES(exchange_rate),
+      branch                   = VALUES(branch),
+      delivery_type            = VALUES(delivery_type),
+      api_branch_details       = VALUES(api_branch_details),
+      beneficiary_id           = VALUES(beneficiary_id),
+      beneficiary_mobile       = VALUES(beneficiary_mobile),
+      benf_account_holder_name = VALUES(benf_account_holder_name),
+      benf_account_number      = VALUES(benf_account_number),
+      benf_bank_name           = VALUES(benf_bank_name),
+      benf_street              = VALUES(benf_street),
       synced_at           = CURRENT_TIMESTAMP
   `;
 
@@ -328,6 +479,22 @@ async function syncTransfers() {
         stripHtml(str(t.LatestCust_Comment)),
         str(t.Ptype),
         str(t.Type_Name),
+        // ── new 15 ──
+        str(t.Sender),
+        str(t.Email_ID),
+        str(t.Purpose),
+        num(t.Transfer_Fees),
+        num(t.AmountInGBP),
+        num(t.Exchange_Rate),
+        str(t.Branch),
+        str(t.Delivery_Type),
+        str(t.API_BranchDetails),
+        str(t.Beneficiary_ID),
+        str(t.Beneficiary_Mobile),
+        str(t.Benf_AccountHolderName) ?? str(t.AccountHolderName),
+        str(t.Benf_Account_Number),
+        str(t.Benf_Bank_Name) ?? str(t.Bank_Name),
+        str(t.Street),
       ]);
       if (res.affectedRows === 1) inserted++;
       else if (res.affectedRows === 2) updated++;
