@@ -15,6 +15,21 @@ interface TransferDetail {
   data_field_id: string | null;
   created_at: string | null;
   tayo_date_paid: string | null;
+  sender_name: string | null;
+  email_id: string | null;
+  purpose: string | null;
+  transfer_fees: number | null;
+  amount_in_gbp: number | null;
+  exchange_rate: number | null;
+  branch: string | null;
+  delivery_type: string | null;
+  api_branch_details: string | null;
+  beneficiary_id: string | null;
+  beneficiary_mobile: string | null;
+  benf_account_holder_name: string | null;
+  benf_account_number: string | null;
+  benf_bank_name: string | null;
+  benf_street: string | null;
   send_amount: number | null;
   send_currency: string | null;
   receive_amount: number | null;
@@ -104,6 +119,16 @@ function StatCard({ label, value }: { label: string; value: string }) {
     <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</p>
       <p className="mt-2 text-sm font-semibold text-slate-900">{value}</p>
+    </div>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: string | number | null | undefined }) {
+  const display = value === null || value === undefined || value === "" ? "-" : String(value);
+  return (
+    <div className="flex items-baseline justify-between gap-3 border-b border-slate-100 py-1.5 last:border-b-0">
+      <span className="text-xs text-slate-500">{label}</span>
+      <span className="text-sm font-medium text-slate-800 text-right break-words">{display}</span>
     </div>
   );
 }
@@ -232,6 +257,37 @@ export default function TransferDetailPage({ params }: { params: { id: string } 
         <StatCard label="Beneficiary" value={transfer.beneficiary_name ?? "-"} />
         <StatCard label="Created" value={formatDate(transfer.created_at)} />
         <StatCard label="Deposited" value={formatDate(transfer.tayo_date_paid)} />
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        {/* Sender */}
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Sender</h3>
+          <DetailRow label="Name" value={transfer.sender_name} />
+          <DetailRow label="Email" value={transfer.email_id} />
+        </div>
+
+        {/* Beneficiary */}
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Beneficiary</h3>
+          <DetailRow label="Account holder" value={transfer.benf_account_holder_name} />
+          <DetailRow label="Account number" value={transfer.benf_account_number} />
+          <DetailRow label="Bank" value={transfer.benf_bank_name} />
+          <DetailRow label="Mobile" value={transfer.beneficiary_mobile} />
+          <DetailRow label="Street" value={transfer.benf_street} />
+          <DetailRow label="Payout branch" value={transfer.api_branch_details} />
+        </div>
+
+        {/* Payment */}
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Payment</h3>
+          <DetailRow label="Amount (GBP)" value={transfer.amount_in_gbp} />
+          <DetailRow label="Exchange rate" value={transfer.exchange_rate} />
+          <DetailRow label="Fees" value={transfer.transfer_fees} />
+          <DetailRow label="Delivery type" value={transfer.delivery_type} />
+          <DetailRow label="Source branch" value={transfer.branch} />
+          <DetailRow label="Purpose" value={transfer.purpose} />
+        </div>
       </div>
 
       <AccountVerificationsList

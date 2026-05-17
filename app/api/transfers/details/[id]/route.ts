@@ -14,6 +14,21 @@ interface TransferDetailRow extends RowDataPacket {
   data_field_id: string | null;
   created_at: string | null;
   tayo_date_paid: string | null;
+  sender_name: string | null;
+  email_id: string | null;
+  purpose: string | null;
+  transfer_fees: number | null;
+  amount_in_gbp: number | null;
+  exchange_rate: number | null;
+  branch: string | null;
+  delivery_type: string | null;
+  api_branch_details: string | null;
+  beneficiary_id: string | null;
+  beneficiary_mobile: string | null;
+  benf_account_holder_name: string | null;
+  benf_account_number: string | null;
+  benf_bank_name: string | null;
+  benf_street: string | null;
   send_amount: number | null;
   send_currency: string | null;
   receive_amount: number | null;
@@ -62,6 +77,21 @@ export async function GET(
               t.data_field_id,
               t.created_at,
               t.tayo_date_paid,
+              t.sender_name,
+              t.email_id,
+              t.purpose,
+              t.transfer_fees,
+              t.amount_in_gbp,
+              t.exchange_rate,
+              t.branch,
+              t.delivery_type,
+              t.api_branch_details,
+              t.beneficiary_id,
+              t.beneficiary_mobile,
+              t.benf_account_holder_name,
+              t.benf_account_number,
+              t.benf_bank_name,
+              t.benf_street,
               t.send_amount,
               t.send_currency,
               t.receive_amount,

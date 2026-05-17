@@ -41,6 +41,23 @@ export interface RawTransfer {
   Type_Name: string;
   paymentReceived_Name: string;
   Datepaid?: string;
+  Sender?: string;
+  Email_ID?: string;
+  Purpose?: string;
+  Transfer_Fees?: string | number;
+  AmountInGBP?: string | number;
+  Exchange_Rate?: string | number;
+  Branch?: string;
+  Delivery_Type?: string;
+  API_BranchDetails?: string;
+  Beneficiary_ID?: string;
+  Beneficiary_Mobile?: string;
+  Benf_AccountHolderName?: string;
+  AccountHolderName?: string;
+  Benf_Account_Number?: string;
+  Benf_Bank_Name?: string;
+  Bank_Name?: string;
+  Street?: string;
   [key: string]: unknown;
 }
 
@@ -60,6 +77,21 @@ export interface MappedTransfer {
   delivery_method: string | null;
   payment_status: string | null;
   tayo_date_paid: string | null;
+  sender_name: string | null;
+  email_id: string | null;
+  purpose: string | null;
+  transfer_fees: number | null;
+  amount_in_gbp: number | null;
+  exchange_rate: number | null;
+  branch: string | null;
+  delivery_type: string | null;
+  api_branch_details: string | null;
+  beneficiary_id: string | null;
+  beneficiary_mobile: string | null;
+  benf_account_holder_name: string | null;
+  benf_account_number: string | null;
+  benf_bank_name: string | null;
+  benf_street: string | null;
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -128,6 +160,21 @@ export function mapTransferRow(t: RawTransfer): MappedTransfer {
     delivery_method:     str(t.Type_Name),
     payment_status:      str(t.paymentReceived_Name),
     tayo_date_paid:      parseTransferDate(t.Datepaid),
+    sender_name:              str(t.Sender),
+    email_id:                 str(t.Email_ID),
+    purpose:                  str(t.Purpose),
+    transfer_fees:            num(t.Transfer_Fees),
+    amount_in_gbp:            num(t.AmountInGBP),
+    exchange_rate:            num(t.Exchange_Rate),
+    branch:                   str(t.Branch),
+    delivery_type:            str(t.Delivery_Type),
+    api_branch_details:       str(t.API_BranchDetails),
+    beneficiary_id:           str(t.Beneficiary_ID),
+    beneficiary_mobile:       str(t.Beneficiary_Mobile),
+    benf_account_holder_name: str(t.Benf_AccountHolderName) ?? str(t.AccountHolderName),
+    benf_account_number:      str(t.Benf_Account_Number),
+    benf_bank_name:           str(t.Benf_Bank_Name) ?? str(t.Bank_Name),
+    benf_street:              str(t.Street),
   };
 }
 
@@ -141,8 +188,14 @@ INSERT INTO transfers
    destination_country, beneficiary_name,
    status, hold_reason,
    payment_method, delivery_method,
-   payment_status, tayo_date_paid)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+   payment_status, tayo_date_paid,
+   sender_name, email_id, purpose,
+   transfer_fees, amount_in_gbp, exchange_rate,
+   branch, delivery_type, api_branch_details,
+   beneficiary_id, beneficiary_mobile,
+   benf_account_holder_name, benf_account_number, benf_bank_name, benf_street)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON DUPLICATE KEY UPDATE
   customer_id         = VALUES(customer_id),
   created_at          = VALUES(created_at),
@@ -158,6 +211,21 @@ ON DUPLICATE KEY UPDATE
   delivery_method     = VALUES(delivery_method),
   payment_status      = VALUES(payment_status),
   tayo_date_paid      = VALUES(tayo_date_paid),
+  sender_name              = VALUES(sender_name),
+  email_id                 = VALUES(email_id),
+  purpose                  = VALUES(purpose),
+  transfer_fees            = VALUES(transfer_fees),
+  amount_in_gbp            = VALUES(amount_in_gbp),
+  exchange_rate            = VALUES(exchange_rate),
+  branch                   = VALUES(branch),
+  delivery_type            = VALUES(delivery_type),
+  api_branch_details       = VALUES(api_branch_details),
+  beneficiary_id           = VALUES(beneficiary_id),
+  beneficiary_mobile       = VALUES(beneficiary_mobile),
+  benf_account_holder_name = VALUES(benf_account_holder_name),
+  benf_account_number      = VALUES(benf_account_number),
+  benf_bank_name           = VALUES(benf_bank_name),
+  benf_street              = VALUES(benf_street),
   synced_at           = CURRENT_TIMESTAMP
 `;
 
@@ -197,6 +265,11 @@ export async function upsertTransfers(
           row.status, row.hold_reason,
           row.payment_method, row.delivery_method,
           row.payment_status, row.tayo_date_paid,
+          row.sender_name, row.email_id, row.purpose,
+          row.transfer_fees, row.amount_in_gbp, row.exchange_rate,
+          row.branch, row.delivery_type, row.api_branch_details,
+          row.beneficiary_id, row.beneficiary_mobile,
+          row.benf_account_holder_name, row.benf_account_number, row.benf_bank_name, row.benf_street,
         ];
         const [res] = await db.execute(UPSERT_SQL, params);
         if (res.affectedRows === 1) inserted++;
